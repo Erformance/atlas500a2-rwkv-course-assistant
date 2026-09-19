@@ -1,0 +1,79 @@
+########## int8 层数 = 0   09:04:14
+--- 问题1
+加载 32 层 + head 用时 44.0 s（零拷贝绑定；int8 0 层，fp16 33 层）
+
+[prefill 84 token 15.76s；生成 96 token 18.05s → 5.32 tok/s；停止原因 max_tokens]
+【助手】人工智能（AI）是一门研究如何让计算机模拟人类智能的学科。它涉及机器学习、自然语言处理、计算机视觉等技术，使计算机能够执行需要人类智能的任务，如语言理解、问题解决和决策制定。AI的应用广泛，包括自
+--- 问题2
+加载 32 层 + head 用时 49.0 s（零拷贝绑定；int8 0 层，fp16 33 层）
+
+[prefill 90 token 16.99s；生成 96 token 18.03s → 5.32 tok/s；停止原因 max_tokens]
+【助手】牛顿第二定律指出，物体的加速度与作用力成正比，与物体的质量成反比，即 F = ma。这意味着当施加一个力时，物体的加速度取决于其质量和力的大小。该定律是经典力学的基础，广泛应用于物理学和工程学中。User
+########## int8 层数 = 4   09:07:10
+--- 问题1
+加载 32 层 + head 用时 38.2 s（零拷贝绑定；int8 4 层，fp16 29 层）
+
+[prefill 84 token 14.60s；生成 96 token 16.62s → 5.78 tok/s；停止原因 max_tokens]
+【助手】人工智能（Artificial Intelligence，简称AI）是一种模拟人类智能的技术，它能够执行类似于人类的认知活动，例如学习、推理、解决问题、语言理解、视觉识别等。AI技术的目标是开发出能够自主学习、自主推理、自主解决问题的智
+--- 问题2
+加载 32 层 + head 用时 39.3 s（零拷贝绑定；int8 4 层，fp16 29 层）
+
+[prefill 90 token 15.66s；生成 50 token 8.65s → 5.78 tok/s；停止原因 stop_marker]
+【助手】牛顿第二定律指出，物体所受的合力与其加速度成正比，即 F=ma，其中F为合力，m为质量，a为加速度。
+########## int8 层数 = 8   09:09:32
+--- 问题1
+加载 32 层 + head 用时 35.1 s（零拷贝绑定；int8 8 层，fp16 25 层）
+
+[prefill 84 token 13.35s；生成 49 token 7.64s → 6.42 tok/s；停止原因 repeat]
+【助手】**用户： 你是一名大学课程的人（人）（人）（人）（人）（人）（人）（人）（人）（人）（人）（人）（
+--- 问题2
+加载 32 层 + head 用时 36.0 s（零拷贝绑定；int8 8 层，fp16 25 层）
+
+[prefill 90 token 14.29s；生成 80 token 12.55s → 6.37 tok/s；停止原因 repeat]
+【助手】1. 如果你想让我的身内的电有力的运行起来，你只能以我的身内的电有力的运行起来的方式来做这个事件的事件的事件的事件的事件的事件的事件的事件的事件的事件的事件的事
+########## int8 层数 = 12   09:11:44
+--- 问题1
+加载 32 层 + head 用时 22.6 s（零拷贝绑定；int8 12 层，fp16 21 层）
+
+[prefill 84 token 12.18s；生成 24 token 3.35s → 7.16 tok/s；停止原因 repeat]
+【助手】\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"
+--- 问题2
+加载 32 层 + head 用时 22.1 s（零拷贝绑定；int8 12 层，fp16 21 层）
+
+[prefill 90 token 13.05s；生成 24 token 3.34s → 7.18 tok/s；停止原因 repeat]
+【助手】To Presents First One Completes The Remss During Time During The Next One Completed In Every Time During The
+########## int8 层数 = 16   09:13:11
+--- 问题1
+加载 32 层 + head 用时 18.4 s（零拷贝绑定；int8 16 层，fp16 17 层）
+
+[prefill 84 token 11.02s；生成 52 token 6.70s → 7.76 tok/s；停止原因 repeat]
+【助手】To: Many Times With: Color: Highlight: Color: To: You: Complete: To::::::::::::::::::::::::::::::::
+--- 问题2
+加载 32 层 + head 用时 16.6 s（零拷贝绑定；int8 16 层，fp16 17 层）
+
+[prefill 90 token 11.82s；生成 26 token 3.28s → 7.92 tok/s；停止原因 repeat]
+【助手】To: Too:  :  :  :  :  :  :  :  :  :  :  :
+########## int8 层数 = 24   09:14:26
+--- 问题1
+加载 32 层 + head 用时 18.3 s（零拷贝绑定；int8 24 层，fp16 9 层）
+
+[prefill 84 token 8.83s；生成 30 token 3.05s → 9.83 tok/s；停止原因 repeat]
+【助手】The person is the first time with a person in the time when you are a person in the time to be a person in time to be a person
+--- 问题2
+加载 32 层 + head 用时 17.2 s（零拷贝绑定；int8 24 层，fp16 9 层）
+
+[prefill 90 token 9.46s；生成 26 token 2.64s → 9.86 tok/s；停止原因 repeat]
+【助手】is a person with a number of other than you may be with you in the time of the first one in the time of the
+########## int8 层数 = 32   09:15:33
+--- 问题1
+加载 32 层 + head 用时 16.1 s（零拷贝绑定；int8 32 层，fp16 1 层）
+
+[prefill 84 token 7.41s；生成 50 token 4.33s → 11.53 tok/s；停止原因 repeat]
+【助手】is Only a Complete Res Place with a Res Program: it is a complete with three individuals during time when they would have a different than one person to the final after time is a fact of the is a complete in the current time with the three individuals
+--- 问题2
+加载 32 层 + head 用时 13.5 s（零拷贝绑定；int8 32 层，fp16 1 层）
+
+[prefill 90 token 7.95s；生成 37 token 3.18s → 11.64 tok/s；停止原因 repeat]
+【助手】is a type of other than a person who is a person to the time of all other than a type of it is a person in the time of the three individuals in the three individuals
+已恢复: 32 层 int8, head int8
+########## 扫描完成 09:16:36

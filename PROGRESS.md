@@ -1,0 +1,125 @@
+# Atlas 500 A2 部署进度
+
+## 2026-09-19：2.9B 定稿后的优化（已完成）
+
+结论：以 **RWKV-7 2.9B + fp16** 作为最终方案，本轮把"能用"做成"好用"。
+
+| 优化项 | 效果 |
+| --- | --- |
+| 重复惩罚（1.15，prompt 也参与惩罚） | 不再复读、不再复述系统提示词 |
+| system 提示词状态缓存 | 预填充 15.8s → **3.1~4.8s**；开新对话加载缓存仅 0.2s |
+| 常驻 HTTP 服务（8000）+ SSE 流式 | **首字 4~7s**，边生成边推送；模型只在启动时加载一次 |
+| 开机自启（crontab @reboot → boot_all.sh） | 重启后自动拉起 slogd/dmp_daemon + 服务 |
+| 健康看门狗（cron 每 5 分钟） | 服务无响应自动重启；带 `service.busy` 忙标记，推理中不误杀 |
+| ask.sh 智能路由 | 服务在跑时走 HTTP 客户端，避免两份模型同时驻留 |
+
+实测：生成 **5.5~5.75 tok/s**；40 token 端到端约 10s；模型加载 43s（仅一次）。
+
+被否掉的方案：输出头 int8（速度 +4.7%，但输出崩坏）、批量 prefill（模型代码用了
+`aten::linalg_solve_triangular`，ONNX 导不出；缓存 system 后预填充只剩 3~5 秒，收益有限）。
+
+踩坑：一份模型占 5.5GB，两份同时驻留会把 11.5GB 的机器拖死（服务一度假死）；
+单线程服务的健康探测在推理期间必然超时，看门狗会误杀——已分别用智能路由和忙标记解决。
+
+### 使用方式
+- 网页：`http://192.168.31.50:8000/`
+- 命令行：`cd /home/disk/models/rwkv7-2.9b && ./ask.sh "问题" [#长度]`
+- 接口：`POST /chat`、`GET /chat/stream`、`GET /health`
+- 起停：`bash start_service.sh [端口|stop]`，重启整机后由 cron 自动恢复
+
+### 下一步（暂缓）
+图文问答不做本地推理：图片交给外部视觉 API 转成文字描述，再拼进 prompt 喂给
+本机的 RWKV-7 2.9B。理由是这台设备的内存（11.5GB，已用掉 5.5GB 放文本模型）
+和算力都不适合再塞一个视觉编码器；写进报告时按"边缘端文本推理 + 云端视觉能力"
+的协同架构来写，也是合理的技术选择。
+
+## 2026-09-19（下午）：网页版上线
+
+访问地址：**http://192.168.31.50:8000/**（手机连同一网络也能开）
+
+### 做了什么
+- 前端抽成单文件 `web/index.html`（约 11KB，内联 CSS/JS，无框架、无 CDN、离线可用）：
+  聊天气泡、流式打字、代码块渲染与一键复制、长度下拉（64~512）、新对话、
+  服务状态圆点、深色自动适配、手机端适配（375px 无横向滚动）。
+- 后端 `rwkv7_http.py` 增加静态托管：`GET /` 读 `web/index.html`（带 mtime 热重载，
+  改页面不用重启服务）、`GET /static/*`（带路径穿越防护）、`GET /favicon.ico` 返回 204；
+  读不到文件时自动回退到内置简易页面，保证服务不会因缺文件而挂。
+- 顺手去掉模型爱说的"课程助手："身份前缀（服务端 + 前端各做一次）。
+
+### 过程中修掉的两个真问题
+1. **HTTP/1.1 keep-alive 把单线程服务堵死**：浏览器空闲长连接会让服务器阻塞在读取上，
+   新请求全部排队超时，看门狗还会误判并重启服务。改成 `HTTP/1.0`（一条连接一个请求）后解决。
+2. **看门狗误杀**：单线程服务在推理时无法响应健康探测，已用 `service.busy` 标记 +
+   失败后隔 15 秒复探一次，避免误重启。
+
+### 验收（`test_web.py`，全部通过）
+- 首页/关键字元素/favicon/路径穿越防护/health；
+- 流式问答（首字 5.7s、5.48 tok/s）；
+- 代码类问题产生 ``` 围栏，复制按钮返回"已复制"；
+- 多轮上下文（问"我刚才问的是什么"，模型准确答出上一轮问题）与"新对话"重置；
+- 375px 视口下 `scrollWidth == innerWidth`，无横向滚动；浏览器实测截图确认排版正常。
+
+## 2026-09-14 更新：int8 质量问题已定位，正在用校准数据重建
+
+### 结论链
+1. 全 32 层 label-free int8 跑通：**11.6 token/s**（fp16 是 5.3），但输出崩坏。
+2. 层数扫描：4 层 int8 正常（5.78 tok/s），8 层开始崩，12/16/24/32 一路崩。
+3. 用真实激活值逐层测误差（`cmp_layer_real.py` + `calib/`）：**每层循环状态 wkv 误差
+   20%~55%**（layer4 0.47、layer14 0.55、layer31 0.42），残差流 x 误差 4%~110%。
+   之前用随机小数值测出的 0.7% 是假象——真实状态幅度差几十倍（x 峰值 0.05~8.2，
+   wkv 峰值 1~146），label-free 的默认刻度把状态整体截断了。
+4. 用真实数据校准后重做 layer31：wkv 误差 **0.42 → 0.036**，整体最大误差 1.12 → 0.50。
+   （`calib_method` 0/1 在此版本 modelslim 里结果相同，参数似乎不生效。）
+
+### 正在跑
+`build_calib_layers.sh 0 31 && ... head`，产出 `layer{i}_cq.om` / `head_cq.om`，
+单 worker + 内存看门狗，约 3.6 小时（09:57 开始）。引擎按 `--suffix _cq` 加载，
+没做好的层自动回退 fp16，所以过程中可以随时抽检质量。
+
+### 待办
+1. 每隔 1 小时抽检一次：`python rwkv7_chat.py --ask "什么是人工智能？" --tokens 96 --suffix _cq`
+2. 全部完成后跑 `bench_ab.sh` 出 fp16 / int8 对照报告（速度 + 质量）。
+3. 若校准版仍不达标，退路：校准 int8 只用于部分层 + 其余 fp16。
+
+## 目标
+在 Atlas 500 A2（昇腾 310B）上把 RWKV-7 2.9B 跑到 NPU，并用 int8 量化进一步提速。
+
+## 今天的状态
+- NPU 可用：重启后必须手动拉起 `/var/slogd` 和 `/var/dmp_daemon -I -U 8087`，
+  否则 `npu-smi info` 报 `dcmi module initialize failed (-8010)`。
+- fp16 版本已跑通：`/home/disk/models/rwkv7-2.9b/ask.sh`，约 5.2 token/s。
+- int8 路线已验证可行：layer1 量化版同层相对误差 0.3~1%，单层快 1.91 倍，
+  体积 163MB → 83MB。
+- 后台正在串行编译剩余层（见下）。
+
+## 正在跑的后台任务（设备上）
+- `bash -c "bash build_int8_layers.sh 0 31 && bash build_int8_layers.sh head"`，日志 `build_all.log`
+- 内存看门狗 `mem_guard.sh`（可用内存持续低于 700MB 就杀最新 atc，保命）
+- 已完成 12 层（layer0~11），单 worker，约 5.3 分钟/层，预计再 2 小时左右做完 31 层 + head
+- 停止方式：`ps -eo pid,args | grep [b]uild_int8` 找到 pid 后 `kill`
+- 自动关机看护 `auto_poweroff.sh` 已在跑：每 60 秒查一次编译进程，等
+  `build_int8_layers.sh`（含 head）全部退出后再等 2 分钟收尾，把结果写进
+  `autopoweroff.log`，然后 `systemctl poweroff`。**明天需要手动上电**，
+  上电后先拉起 slogd / dmp_daemon。若设备中途自己复位，看护进程也会消失，
+  设备会保持开机。
+- 注意：**不要开多 worker**。这台机器 4 核 11GB 无 swap，且有 60s 硬件看门狗
+  （`PROCMGR: wdTimeout=60s wdAction=2`）；开 3 个 worker 时整机假死 45 分钟，
+  开 2 个 worker 时设备直接复位重启了一次。
+
+## 明天的步骤
+1. 检查 `build_all.log` 是否全部完成（32 层 + head）。
+2. 跑 int8 推理：`/home/disk/models/rwkv7-2.9b/ask_q.sh "问题"`（缺层自动回退 fp16）。
+3. 跑 fp16/int8 对照：`bash bench_ab.sh`，产出 `bench_fp16.txt` / `bench_int8.txt`。
+4. 记录速度、质量，决定最终交付形态。
+
+## 本机（Windows）工具
+- `atlas.py`：SSH 远程执行（密码登录 + develop 提权 + SFTP）
+  - `python atlas.py run "命令"` 以 root 执行；`put` / `get` 传文件
+  - SFTP 是 admin 身份，写不进 root 目录，需先传到 `/tmp` 再 `install`
+- `build_int8_layers.sh`、`mem_guard.sh`、`bench_ab.sh`、`ask_q.sh`：设备侧脚本源文件
+- `device_rwkv7_chat.py` / `device_rwkv7_serve2.py`：从设备取回的版本（比对用）
+
+## 设备信息
+- 主机 `192.168.31.50`，用户 `admin`；`develop` 提权到 root（两次密码相同）
+- CANN 8.0.RC1：`/home/disk/cann80base/ascend-toolkit/set_env.sh`
+- conda：`/home/disk/miniconda3/envs/{npu22,rwkv7,quant}`

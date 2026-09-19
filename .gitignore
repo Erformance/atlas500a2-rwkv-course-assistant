@@ -1,0 +1,37 @@
+# ---- 凭据与私钥（绝对不能提交） ----
+.ssh/
+atlas.env
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+
+# ---- Python ----
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- 模型与构建产物（体积大，留在设备上） ----
+*.om
+*.onnx
+*.safetensors
+*.npz
+state_cache/
+calib/
+
+# ---- 设备运行期文件 ----
+service.log
+watchdog.log
+boot.log
+mem_guard.log
+autopoweroff.log
+service.pid
+service.busy
