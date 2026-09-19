@@ -33,6 +33,7 @@ STATE_CACHE_DIR = os.path.join(MODEL_DIR, "state_cache")
 DEFAULT_SYSTEM = (
     "你是一名大学课程助手，名字叫课程助手。"
     "你只能以课程助手的身份回答，不要自称其他模型或公司。"
+    "只回答用户最后提出的那个问题，不要复述用户的话，也不要重复之前已经说过的内容。"
     "回答要准确、简洁、条理清楚。"
 )
 
@@ -45,7 +46,7 @@ BOUNDARY_CHARS = "\n。！？.!?…；;\"'）)】」』"
 # 模型有时会把身份前缀一起写出来，去掉它让回答更干净
 ROLE_PREFIX = re.compile(r"^\s*(?:课程助手|助手|AI助手|Assistant)\s*[：:]\s*")
 # 流式输出时，把可能正在拼装的停止符回看窗口留在缓冲里，不急着打印
-LOOKBACK = max(len(m) for m in STOP_MARKERS) - 1
+LOOKBACK = max(len(m) for m in STOP_MARKERS) + 1      # 多留一个字符，连边界标点一起吃住
 
 
 def build_prompt(user_text, system_text):
@@ -78,6 +79,21 @@ def trim(text):
     return text[:pos].rstrip(), True
 
 
+def looks_like_echo(answer, question):
+    """判断回答是不是只在复述用户的问题（小模型偶发）。"""
+    a = re.sub(r"\s+", "", answer or "")
+    q = re.sub(r"\s+", "", question or "")
+    if not a:
+        return True
+    if a.startswith(("User:", "用户：", "用户:")):
+        return True
+    if q and a == q:
+        return True
+    if q and a.startswith(q) and len(a) <= len(q) + 10:
+        return True
+    return False
+
+
 class Chat:
     def __init__(self, engine, tokenizer, system=DEFAULT_SYSTEM,
                  repetition_penalty=1.15, rep_window=256):
@@ -89,16 +105,17 @@ class Chat:
         self.history_started = False
         self.turns = 0
 
-    def _penalize(self, logits, seen_ids):
+    def _penalize(self, logits, seen_ids, penalty=None):
         """对已出现过的 token 降权（含 prompt），抑制复读和复述提示词。"""
-        if self.repetition_penalty <= 1.0 or not seen_ids:
+        pen = self.repetition_penalty if penalty is None else penalty
+        if pen <= 1.0 or not seen_ids:
             return logits
         out = logits.copy()
         for tid in set(seen_ids[-self.rep_window:]):
             if out[tid] > 0:
-                out[tid] /= self.repetition_penalty
+                out[tid] /= pen
             else:
-                out[tid] *= self.repetition_penalty
+                out[tid] *= pen
         return out
 
     def reset(self):
@@ -127,17 +144,9 @@ class Chat:
         self.history_started = True
         return "User: %s\n\nAssistant: <think></think>\n" % user_text
 
-    def ask(self, user_text, max_tokens=128, temperature=0.0, top_k=0, stream=False,
-            verbose=False, on_delta=None):
-        prompt = self.build_turn_prompt(user_text)
-        ids = self.tokenizer.encode(prompt).ids
-
-        t0 = time.time()
-        logits = None
-        for tok in ids:
-            logits = self.engine.step(int(tok))
-        prefill_s = time.time() - t0
-
+    def _generate(self, logits, ids, max_tokens, temperature, top_k, stream, on_delta,
+                  penalty=None):
+        """从给定 logits 出发生成一段文本。返回 (text, out_ids, stop_reason, gen_s)。"""
         rng = np.random.default_rng(0)
         out_ids = []
         seen_ids = list(ids)          # prompt 也要参与重复惩罚
@@ -146,7 +155,7 @@ class Chat:
         stop_reason = "max_tokens"
         t1 = time.time()
         for _ in range(max_tokens):
-            logits = self._penalize(logits, seen_ids)
+            logits = self._penalize(logits, seen_ids, penalty)
             if temperature <= 0:
                 nxt = int(np.argmax(logits))
             else:
@@ -180,7 +189,10 @@ class Chat:
                         on_delta(chunk)
                     shown = limit
 
-            if len(out_ids) >= 24 and text[-16:] in text[:-16]:
+            # 复读检测：24 字窗口且至少 12 个非空白字符，避免把代码缩进误判成复读
+            tail = text[-24:]
+            if (len(out_ids) >= 32 and sum(not c.isspace() for c in tail) >= 12
+                    and tail in text[:-24]):
                 stop_reason = "repeat"
                 break
 
@@ -195,6 +207,36 @@ class Chat:
             if on_delta:
                 on_delta(chunk)
             shown = len(text)
+        return text, out_ids, stop_reason, gen_s
+
+    def ask(self, user_text, max_tokens=128, temperature=0.0, top_k=0, stream=False,
+            verbose=False, on_delta=None):
+        prompt = self.build_turn_prompt(user_text)
+        ids = self.tokenizer.encode(prompt).ids
+
+        t0 = time.time()
+        logits = None
+        for tok in ids:
+            logits = self.engine.step(int(tok))
+        prefill_s = time.time() - t0
+
+        prompt_logits = logits.copy()
+        # 留一份"刚读完提示词"的状态快照：首答若只是在复述用户的话，可以回滚重试
+        snap = self.engine.export_state()
+
+        text, out_ids, stop_reason, gen_s = self._generate(
+            prompt_logits, ids, max_tokens, temperature, top_k, stream, on_delta)
+
+        if looks_like_echo(text, user_text):
+            # 无论 verbose 与否都记一笔：这条会进 service.log，方便统计触发频率
+            print("\n[回退重试] 首答疑似复述用户问题：%r" % text[:30], flush=True)
+            self.engine.import_state(snap)
+            text2, out_ids2, stop2, gen2 = self._generate(
+                prompt_logits, ids, max_tokens, temperature, top_k, stream, on_delta,
+                penalty=min(self.repetition_penalty * 1.3, 2.0))
+            if text2.strip():
+                text, out_ids, stop_reason, gen_s = text2, out_ids2, stop2, gen2
+
 
         if verbose:
             print("\n[prefill %d token %.2fs；生成 %d token %.2fs → %.2f tok/s；停止原因 %s]"

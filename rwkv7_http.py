@@ -188,7 +188,9 @@ class Handler(BaseHTTPRequestHandler):
                 STATS["requests"] += 1
                 STATS["tokens"] += info["n"]
                 STATS["gen_s"] += info["gen_s"]
-                send({"done": True, "n": info["n"],
+                # 把服务端截断、清理之后的最终文本一并下发：
+                # 流式过程中可能已经打出了"假续写"的碎片，前端应以这里为准重绘。
+                send({"done": True, "answer": text, "n": info["n"],
                       "prefill_s": round(info["prefill_s"], 2),
                       "gen_s": round(info["gen_s"], 2),
                       "tok_s": round(info["n"] / info["gen_s"], 2) if info["gen_s"] else 0,

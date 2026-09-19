@@ -26,7 +26,10 @@ fi
 
 source /home/disk/cann80base/ascend-toolkit/set_env.sh
 cd "$MODEL_DIR" || exit 1
-: > "$LOG"                      # 先清空，避免把上一次启动的"就绪"当成这次的成功
+# 先把上次的日志留一份（否则服务异常退出时的报错会被这次启动覆盖掉，没法排查），
+# 再清空当前日志，避免把上一次的"就绪"当成这次启动成功的标志。
+[ -s "$LOG" ] && cp -f "$LOG" "$LOG.prev"
+: > "$LOG"
 echo "[$(date '+%F %T')] 启动服务，端口 $PORT" >> "$LOG"
 setsid nohup /home/disk/miniconda3/envs/npu22/bin/python rwkv7_http.py --port "$PORT" \
     >> "$LOG" 2>&1 < /dev/null &

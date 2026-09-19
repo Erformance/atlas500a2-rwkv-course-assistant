@@ -165,7 +165,8 @@ function ask(){
     if (d.done){
       es.close(); es = null;
       node.bubble.classList.remove('cursor');
-      renderAnswer(node.bubble, raw);
+      // 以服务端最终文本为准：流式过程中可能已打出被截断的碎片
+      renderAnswer(node.bubble, (d.answer !== undefined ? d.answer : raw));
       const st = document.createElement('div');
       st.className = 'status-line';
       st.textContent = '预填充 ' + d.prefill_s + 's ｜ ' + d.n + ' token ｜ '
