@@ -189,9 +189,12 @@ class Chat:
                         on_delta(chunk)
                     shown = limit
 
-            # 复读检测：24 字窗口且至少 12 个非空白字符，避免把代码缩进误判成复读
+            # 复读检测：只在正文里生效。代码块内部（``` 之间）的循环、推导式、
+            # 重复的属性名都是正常写法，之前会把代码题误判成复读而掐断。
+            in_code = text.count("```") % 2 == 1
             tail = text[-24:]
-            if (len(out_ids) >= 32 and sum(not c.isspace() for c in tail) >= 12
+            if (not in_code and len(out_ids) >= 32
+                    and sum(not c.isspace() for c in tail) >= 12
                     and tail in text[:-24]):
                 stop_reason = "repeat"
                 break
