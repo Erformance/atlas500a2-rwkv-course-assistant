@@ -36,9 +36,12 @@ DEFAULT_SYSTEM = (
     "回答要准确、简洁、条理清楚。"
 )
 
-# 停止符：模型经常在答案末尾自己续写下一轮对话，需要截断
-STOP_MARKERS = ("\n\nUser:", "\nUser:", "\n\nAssistant:", "\nAssistant:",
-                "\n\nSystem:", "User:", "Assistant:", "System:", "<|endoftext|>")
+# 停止符：模型经常在答案末尾自己续写下一轮对话，需要截断。
+# 注意：不能在答案正文里也生效——讲提示词工程时正文本身就含 "System:"，
+# 早期版本因此把整段回答从位置 0 切掉。所以只有出现在"轮次边界"上
+# （标记前是换行或句末标点）才算新一轮开始。
+STOP_MARKERS = ("User:", "Assistant:", "System:", "<|endoftext|>")
+BOUNDARY_CHARS = "\n。！？.!?…；;\"'）)】」』"
 # 模型有时会把身份前缀一起写出来，去掉它让回答更干净
 ROLE_PREFIX = re.compile(r"^\s*(?:课程助手|助手|AI助手|Assistant)\s*[：:]\s*")
 # 流式输出时，把可能正在拼装的停止符回看窗口留在缓冲里，不急着打印
@@ -49,14 +52,30 @@ def build_prompt(user_text, system_text):
     return "System: %s\n\nUser: %s\n\nAssistant: <think></think>\n" % (system_text, user_text)
 
 
+def find_stop(text):
+    """找最早的、位于轮次边界上的停止符。返回 (位置, 标记)，没有则 (None, None)。"""
+    best_pos, best_marker = None, None
+    for marker in STOP_MARKERS:
+        start = 0
+        while True:
+            pos = text.find(marker, start)
+            if pos == -1:
+                break
+            # 位置 0 表示模型在复述提示词而不是开启新一轮，不算停止符
+            if pos > 0 and text[pos - 1] in BOUNDARY_CHARS:
+                if best_pos is None or pos < best_pos:
+                    best_pos, best_marker = pos, marker
+                break
+            start = pos + 1
+    return best_pos, best_marker
+
+
 def trim(text):
     """截断到最早的停止符。返回 (截断后的文本, 是否命中停止符)"""
-    cut = len(text)
-    for marker in STOP_MARKERS:
-        pos = text.find(marker)
-        if pos != -1:
-            cut = min(cut, pos)
-    return text[:cut], cut != len(text)
+    pos, _ = find_stop(text)
+    if pos is None:
+        return text, False
+    return text[:pos].rstrip(), True
 
 
 class Chat:
