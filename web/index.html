@@ -165,7 +165,7 @@ function ask(){
     if (d.done){
       es.close(); es = null;
       node.bubble.classList.remove('cursor');
-      renderAnswer(node.bubble, raw);
+      renderAnswer(node.bubble, d.answer === undefined ? raw : d.answer);
       const st = document.createElement('div');
       st.className = 'status-line';
       st.textContent = '预填充 ' + d.prefill_s + 's ｜ ' + d.n + ' token ｜ '
