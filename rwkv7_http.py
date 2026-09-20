@@ -172,7 +172,17 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
+
+        # 先推一段 2KB 的填充注释：部分手机浏览器与中间代理会攒够一定字节才渲染，
+        # 不先冲一下就会出现"等很久才开始出字"（桌面浏览器没这个问题）。
+        # 以 ":" 开头是 SSE 注释行，客户端会忽略，不影响数据解析。
+        try:
+            self.wfile.write(b": " + b" " * 2048 + b"\n\n")
+            self.wfile.flush()
+        except Exception:
+            return
 
         def send(payload):
             self.wfile.write(("data: %s\n\n" % json.dumps(payload, ensure_ascii=False)).encode())
