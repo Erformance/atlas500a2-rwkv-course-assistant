@@ -145,6 +145,14 @@ function ask(){
   const node = addBubble('ai');
   node.bubble.classList.add('cursor');
   let raw = '';
+  // 立刻给个反馈：预填充要 3~5 秒，先显示“正在思考”+计时；一旦有内容或本轮结束就自动停
+  node.bubble.textContent = '正在思考…';
+  const startedAt = Date.now();
+  const ticker = setInterval(function () {
+    if (raw || !busy) { clearInterval(ticker); return; }
+    node.bubble.textContent = '正在思考… 已等待 '
+      + Math.round((Date.now() - startedAt) / 1000) + ' 秒';
+  }, 1000);
   setBusy(true);
 
   es = new EventSource('/chat/stream?tokens=' + encodeURIComponent(lenEl.value)
