@@ -145,6 +145,16 @@ function ask(){
   const node = addBubble('ai');
   node.bubble.classList.add('cursor');
   let raw = '';
+  // 立刻给个反馈：模型预填充要 3~5 秒，先显示"正在思考"+计时，
+  // 免得用户以为没反应（手机浏览器还可能把流式内容缓冲住）。
+  node.bubble.textContent = '正在思考…';
+  const startedAt = Date.now();
+  let ticker = setInterval(function () {
+    if (raw) return;
+    node.bubble.textContent = '正在思考… 已等待 '
+      + Math.round((Date.now() - startedAt) / 1000) + ' 秒';
+  }, 1000);
+  const stopTicker = function () { if (ticker) { clearInterval(ticker); ticker = null; } };
   setBusy(true);
 
   es = new EventSource('/chat/stream?tokens=' + encodeURIComponent(lenEl.value)
@@ -153,16 +163,19 @@ function ask(){
     let d;
     try { d = JSON.parse(ev.data); } catch (e) { return; }
     if (d.delta){
+      stopTicker();
       raw += d.delta;
       node.bubble.textContent = clean(raw);
       scrollDown(false);
     }
     if (d.error){
+      stopTicker();
       node.bubble.classList.remove('cursor');
       node.bubble.textContent = clean(raw) + (raw ? '\n\n' : '') + '[出错] ' + d.error;
       es.close(); es = null; setBusy(false);
     }
     if (d.done){
+      stopTicker();
       es.close(); es = null;
       node.bubble.classList.remove('cursor');
       // 以服务端最终文本为准：流式过程中可能已打出被截断的碎片
@@ -179,6 +192,7 @@ function ask(){
   };
   es.onerror = function (){
     if (!es) return;                       // done 里已主动关闭，不算错误
+    stopTicker();
     es.close(); es = null;
     node.bubble.classList.remove('cursor');
     node.bubble.textContent = clean(raw) + (raw ? '\n\n' : '') + '[连接中断，请重试]';
