@@ -271,11 +271,20 @@ def main():
     parser.add_argument("--model-dir", default=MODEL_DIR)
     parser.add_argument("--suffix", default="")
     parser.add_argument("--head-suffix", default=None)
+    parser.add_argument("--plan-file", default=None,
+                        help="逐层混合精度计划 JSON（如 plan_top16.json）")
     parser.add_argument("--repetition-penalty", type=float, default=1.15)
     args = parser.parse_args()
 
     tokenizer = Tokenizer.from_file(os.path.join(args.model_dir, "tokenizer.json"))
-    ENGINE = Engine(args.model_dir, suffix=args.suffix, head_suffix=args.head_suffix)
+    plan = None
+    if args.plan_file:
+        with open(args.plan_file) as fh:
+            plan = json.load(fh)
+        print("[计划] %s：int8 %d 层，head=%s"
+              % (args.plan_file, len(plan.get("layers", [])), plan.get("head")), flush=True)
+    ENGINE = Engine(args.model_dir, suffix=args.suffix, head_suffix=args.head_suffix,
+                    plan=plan)
     CHAT = Chat(ENGINE, tokenizer, repetition_penalty=args.repetition_penalty)
     load_index()
     mode = CHAT.prepare_system()

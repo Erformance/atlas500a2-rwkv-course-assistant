@@ -7,8 +7,15 @@ MODEL_DIR=/home/disk/models/rwkv7-2.9b
 PIDFILE=$MODEL_DIR/service.pid
 LOG=$MODEL_DIR/watchdog.log
 FAILFILE=$MODEL_DIR/watchdog.fail          # 连续探测失败次数
+LOCKFILE=$MODEL_DIR/experiment.lock        # 存在则表示正在跑 NPU 实验，看门狗全程不介入
 PY=/home/disk/miniconda3/envs/npu22/bin/python
 MAX_FAIL=3                                  # 连续失败这么多次才重启（每 5 分钟一次 ≈ 15 分钟）
+
+# 实验期间（experiment.lock 存在）完全不介入：实验脚本要独占 NPU，
+# 服务被拉起来会与实验抢设备（表现为加载 .om 失败 145001）。
+if [ -f "$LOCKFILE" ]; then
+  exit 0
+fi
 
 alive() {
   [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null || return 1
