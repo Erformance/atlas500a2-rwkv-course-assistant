@@ -5,9 +5,10 @@
 head 的输入就是第 31 层的 x 输出，所以直接用 calib/layer31.npz 里的真实输入
 跑一遍 fp16 的 layer31.om，把 x 输出存成 calib/head.npz 即可。
 
-用法: python make_head_calib.py
+用法: python make_head_calib.py [--calib-dir calib_pre] [--out-npz calib_pre/head.npz]
 """
 
+import argparse
 import os
 import re
 import sys
@@ -26,13 +27,20 @@ def norm(name):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--calib-dir", default=os.path.join(MODEL_DIR, "calib"))
+    parser.add_argument("--out-npz", default=None)
+    parser.add_argument("--layer", type=int, default=31)
+    args = parser.parse_args()
+    out_npz = args.out_npz or os.path.join(args.calib_dir, "head.npz")
+
     check(acl.init())
     check(acl.rt.set_device(0))
     ctx, ret = acl.rt.create_context(0)
     check(ret)
 
-    om = Om(os.path.join(MODEL_DIR, "layer31.om"))
-    data = np.load(os.path.join(MODEL_DIR, "calib", "layer31.npz"))
+    om = Om(os.path.join(MODEL_DIR, "layer%d.om" % args.layer))
+    data = np.load(os.path.join(args.calib_dir, "layer%02d.npz" % args.layer))
     steps = data["x"].shape[0]
 
     outs = []
@@ -43,8 +51,8 @@ def main():
     stacked = np.stack(outs)
     print("head 校准样本 %d 组，形状 %s，峰值 %.3f"
           % (stacked.shape[0], stacked.shape[1:], float(np.abs(stacked).max())))
-    np.savez_compressed(os.path.join(MODEL_DIR, "calib", "head.npz"), x=stacked)
-    print("已写出 calib/head.npz")
+    np.savez_compressed(out_npz, x=stacked)
+    print("已写出 %s" % out_npz)
 
     acl.rt.destroy_context(ctx)
     acl.rt.reset_device(0)

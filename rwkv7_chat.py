@@ -16,6 +16,7 @@
 
 import argparse
 import hashlib
+import json
 import os
 import re
 import sys
@@ -264,6 +265,8 @@ def main():
                         help="'_q' 用 int8 层模型（缺失的层自动回退 fp16）")
     parser.add_argument("--head-suffix", default=None,
                         help="输出头单独用别的后缀，例如 _q（层仍按 --suffix）")
+    parser.add_argument("--plan-file", default=None,
+                        help="逐层混合精度计划 JSON（混合精度实验用）")
     parser.add_argument("--repetition-penalty", type=float, default=1.15,
                         help="重复惩罚系数，1.0 表示关闭")
     parser.add_argument("--rep-window", type=int, default=256,
@@ -271,7 +274,14 @@ def main():
     args = parser.parse_args()
 
     tokenizer = Tokenizer.from_file(os.path.join(args.model_dir, "tokenizer.json"))
-    engine = Engine(args.model_dir, suffix=args.suffix, head_suffix=args.head_suffix)
+    plan = None
+    if args.plan_file:
+        with open(args.plan_file) as fh:
+            plan = json.load(fh)
+        print("[计划] %s：int8 %d 层，head=%s"
+              % (args.plan_file, len(plan.get("layers", [])), plan.get("head")), flush=True)
+    engine = Engine(args.model_dir, suffix=args.suffix, head_suffix=args.head_suffix,
+                    plan=plan)
     chat = Chat(engine, tokenizer, system=args.system,
                 repetition_penalty=args.repetition_penalty, rep_window=args.rep_window)
     t_sys = time.time()

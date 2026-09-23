@@ -69,14 +69,27 @@ class OmModel:
 
 
 class Engine:
-    def __init__(self, model_dir, device=0, suffix="", head_suffix=None):
+    def __init__(self, model_dir, device=0, suffix="", head_suffix=None, plan=None):
         """suffix='_q' 时优先加载 layer{i}_q.om / head_q.om（int8），
-        缺哪个就自动回退到对应的 fp16 模型 —— 量化构建到一半也能直接跑。"""
+        缺哪个就自动回退到对应的 fp16 模型 —— 量化构建到一半也能直接跑。
+
+        plan（可选）：逐层选择用哪套模型，形如
+            {"suffix": "_cp_q", "layers": [0, 1, 7], "head": true}
+        未列入 layers 的层、以及 head=false 时使用 fp16。用于混合精度实验：
+        每层 fp16 与 int8 版本都在磁盘上，因此换计划不需要重新编译。
+        """
         import acl
         self.acl = acl
         self.model_dir = model_dir
         self.suffix = suffix
         self.head_suffix = suffix if head_suffix is None else head_suffix
+        self.plan_layers = None
+        self.plan_head = None
+        if plan:
+            self.suffix = plan.get("suffix", suffix) or suffix
+            self.plan_layers = set(int(x) for x in plan.get("layers", []))
+            self.plan_head = bool(plan.get("head", False))
+            self.head_suffix = self.suffix
         self.n_quant = 0
         self.n_plain = 0
         t0 = time.time()
@@ -107,7 +120,11 @@ class Engine:
         # ---- 逐层绑定 ----
         self.layers = []
         for i in range(LAYERS):
-            om = OmModel(acl, self._om_path("layer%d" % i))
+            if self.plan_layers is not None:
+                layer_suffix = self.suffix if i in self.plan_layers else ""
+            else:
+                layer_suffix = self.suffix
+            om = OmModel(acl, self._om_path("layer%d" % i, layer_suffix))
             src_x = self.x_in_dev if i == 0 else self.layer_x[i - 1]
             src_vf = self.vf_zero_dev if i == 0 else self.layer_vf[i - 1]
             slot = {
@@ -127,7 +144,11 @@ class Engine:
             om.attach([slot[n] for n in om.in_names], [dst[n] for n in om.out_names])
             self.layers.append(om)
 
-        self.head = OmModel(acl, self._om_path("head", self.head_suffix))
+        if self.plan_head is not None:
+            head_suffix = self.head_suffix if self.plan_head else ""
+        else:
+            head_suffix = self.head_suffix
+        self.head = OmModel(acl, self._om_path("head", head_suffix))
         self.head.attach([self.layer_x[LAYERS - 1]], [self.logits_dev])
 
         self.embedding = self._load_embedding(model_dir)
@@ -209,11 +230,14 @@ def main():
     parser.add_argument("--top-k", type=int, default=0)
     parser.add_argument("--suffix", default="", help="'_q' 表示用 int8 模型（缺层自动回退）")
     parser.add_argument("--head-suffix", default=None, help="输出头单独指定后缀")
+    parser.add_argument("--plan", default=None,
+                        help='逐层计划 JSON，如 \'{"suffix":"_cp_q","layers":[0,1],"head":false}\'')
     args = parser.parse_args()
 
     from tokenizers import Tokenizer
     tokenizer = Tokenizer.from_file(os.path.join(args.model_dir, "tokenizer.json"))
-    engine = Engine(args.model_dir, suffix=args.suffix, head_suffix=args.head_suffix)
+    plan = json.loads(args.plan) if args.plan else None
+    engine = Engine(args.model_dir, suffix=args.suffix, head_suffix=args.head_suffix, plan=plan)
 
     def run(ids, n, stream=False):
         engine.reset_state()
