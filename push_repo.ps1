@@ -38,10 +38,17 @@ $b64 = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f $
 
 Write-Output ("credential: {0} (token length {1})" -f $user, $pass.Length)
 
-git -c "http.https://github.com/.extraheader=Authorization: Basic $b64" `
-    push origin ("HEAD:{0}" -f $Branch) 2>&1 | ForEach-Object {
-      ($_ -replace [regex]::Escape($b64), '***') -replace [regex]::Escape($pass), '***'
-    }
+# git writes progress to stderr; with ErrorActionPreference=Stop that would be
+# reported as a terminating error even on a successful push.
+$ErrorActionPreference = "Continue"
+$pushOut = git -c "http.https://github.com/.extraheader=Authorization: Basic $b64" `
+               push origin ("HEAD:{0}" -f $Branch) 2>&1
+$pushOk = $LASTEXITCODE -eq 0
+$pushOut | ForEach-Object {
+  ($_ -replace [regex]::Escape($b64), '***') -replace [regex]::Escape($pass), '***'
+}
+$ErrorActionPreference = "Stop"
+if (-not $pushOk) { Write-Output "push failed (see output above)"; exit 1 }
 
 Write-Output "remote branch now points at:"
 git ls-remote origin -h ("refs/heads/{0}" -f $Branch)
