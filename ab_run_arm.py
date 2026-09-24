@@ -20,7 +20,7 @@ sys.path.insert(0, MODEL_DIR)
 import acl                                            # noqa: E402
 from tokenizers import Tokenizer                      # noqa: E402
 from rwkv7_serve2 import Engine, WKV_BYTES, LAYERS    # noqa: E402
-from capture_calib_pre import PILOT_TEXT              # noqa: E402
+from capture_calib_pre import PILOT_TEXT, MIXED_TEXT   # noqa: E402
 
 
 def main():
@@ -29,13 +29,16 @@ def main():
     parser.add_argument("--plan-json", default="",
                         help='逐层计划，如 \'{"suffix":"_cp_q","layers":[5],"head":false}\'')
     parser.add_argument("--tokens", type=int, default=64)
+    parser.add_argument("--text", default="pilot", choices=["pilot", "mixed"],
+                        help="pilot=自然问答文本；mixed=代码为主的混合文本")
     parser.add_argument("--decode-steps", type=int, default=32)
     parser.add_argument("--out", required=True)
     parser.add_argument("--meta", default="")
     args = parser.parse_args()
 
     tokenizer = Tokenizer.from_file(os.path.join(MODEL_DIR, "tokenizer.json"))
-    ids = tokenizer.encode(PILOT_TEXT).ids[: args.tokens]
+    text = MIXED_TEXT if args.text == "mixed" else PILOT_TEXT
+    ids = tokenizer.encode(text).ids[: args.tokens]
 
     plan = json.loads(args.plan_json) if args.plan_json else None
     engine = Engine(MODEL_DIR, suffix=args.suffix, plan=plan)
@@ -62,6 +65,7 @@ def main():
     meta = {
         "suffix": args.suffix,
         "plan": plan,
+        "text": args.text,
         "tokens": len(ids),
         "n_quant_layers": engine.n_quant,
         "n_fp16_layers": engine.n_plain,

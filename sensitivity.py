@@ -42,6 +42,8 @@ def main():
     parser.add_argument("--suffix", default="_cp_q")
     parser.add_argument("--tokens", type=int, default=64)
     parser.add_argument("--targets", default="all")
+    parser.add_argument("--text", default="pilot", choices=["pilot", "mixed"],
+                        help="测量的 token 序列来源")
     parser.add_argument("--ref", default=os.path.join(MODEL_DIR, "arm_fp16.npz"))
     parser.add_argument("--out", default=os.path.join(MODEL_DIR, "sensitivity.json"))
     args = parser.parse_args()
@@ -68,6 +70,7 @@ def main():
         tmp = "/tmp/arm_sens_%s.npz" % t
         cmd = [PY, os.path.join(MODEL_DIR, "ab_run_arm.py"),
                "--plan-json", json.dumps(plan), "--tokens", str(args.tokens),
+               "--text", args.text,
                "--out", tmp]
         r = subprocess.run(cmd, capture_output=True, text=True)
         if not os.path.exists(tmp):
@@ -81,6 +84,7 @@ def main():
         with open(args.out, "w") as fh:
             json.dump({"reference": os.path.basename(args.ref),
                        "suffix": args.suffix, "tokens": args.tokens,
+                       "text": args.text,
                        "targets": results}, fh, ensure_ascii=False, indent=2)
 
     # 汇总

@@ -1,0 +1,20 @@
+{
+  "precise": {
+    "label": "精确档",
+    "desc": "全部 fp16，质量最稳、最慢（KL 0，基准）",
+    "plan": "",
+    "tok_s": 5.0
+  },
+  "balanced": {
+    "label": "均衡档",
+    "desc": "8 层 int8（layer 6/11/13/15/17/18/24/28）· 全序列 KL 0.019 · top-1 一致 93.8%",
+    "plan": "plan_top8.json",
+    "tok_s": 5.8
+  },
+  "fast": {
+    "label": "快速档",
+    "desc": "16 层 int8 · 全序列 KL 0.049 · top-1 一致 92.2%",
+    "plan": "plan_top16.json",
+    "tok_s": 7.0
+  }
+}

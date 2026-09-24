@@ -40,6 +40,28 @@ PILOT_TEXT = (
     "User: 光合作用的过程是什么？\n\nAssistant: 植物利用光能，把二氧化碳和水合成有机物并释放氧气。\n"
 )
 
+# 代码为主的混合文本：用于"敏感度是否依赖数据分布"的对照测量。
+# 与 PILOT_TEXT 合起来构成两个分布，取两边都安全的层做计划（避免偏科）。
+MIXED_TEXT = (
+    "System: 你是一名大学课程助手，回答要准确、简洁。\n\n"
+    "User: 写一个判断素数的 Python 函数。\n\n"
+    "Assistant: def is_prime(n):\n    if n < 2:\n        return False\n"
+    "    for i in range(2, int(n ** 0.5) + 1):\n        if n % i == 0:\n            return False\n"
+    "    return True\n\n"
+    "User: 那快速排序怎么写？\n\n"
+    "Assistant: def quick_sort(arr):\n    if len(arr) <= 1:\n        return arr\n"
+    "    pivot = arr[len(arr) // 2]\n    left = [x for x in arr if x < pivot]\n"
+    "    middle = [x for x in arr if x == pivot]\n    right = [x for x in arr if x > pivot]\n"
+    "    return quick_sort(left) + middle + quick_sort(right)\n\n"
+    "User: 再写一个二分查找。\n\n"
+    "Assistant: def binary_search(arr, target):\n    lo, hi = 0, len(arr) - 1\n"
+    "    while lo <= hi:\n        mid = (lo + hi) // 2\n        if arr[mid] == target:\n"
+    "            return mid\n        if arr[mid] < target:\n            lo = mid + 1\n"
+    "        else:\n            hi = mid - 1\n    return -1\n\n"
+    "User: 顺便说说什么是熵。\n\n"
+    "Assistant: 熵描述系统的无序程度。\n"
+)
+
 
 def read_buffer(acl, ptr, size):
     buf = np.empty(size // 4, np.float32)

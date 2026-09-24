@@ -7,12 +7,13 @@
 
 | 指标 | 数值 |
 | --- | --- |
-| 生成速度 | 5.5 ~ 5.75 token/s（约 180 ms/token） |
+| 生成速度 | 5.0 ~ 7.0 token/s（精确档 / 均衡档 / 快速档三档，见下） |
 | 预填充 | 3 ~ 5 秒（系统提示词状态缓存后，只跑用户那一句） |
 | 首字延迟 | 4 ~ 7 秒（SSE 流式输出） |
 | 模型加载 | 约 43 秒（常驻服务只加载一次） |
 | 权重体积 | 5.2 GB（fp16），运行时内存约 5.5 GB |
 | 设备上限 | 2.9B；7.2B 受 11.5GB 共享内存限制，本机不可行（见下） |
+| 推理档位 | 网页上可切：精确（fp16）/ 均衡（8 层 int8）/ 快速（16 层 int8），换档约 45 秒 |
 
 ## 技术路线
 
@@ -38,10 +39,13 @@ PyTorch(safetensors) → 逐层导出 ONNX → ATC 编译成 .om → pyACL 零�
 | --- | --- |
 | `rwkv7_serve2.py` | pyACL 零拷贝推理引擎（逐层绑定、状态原地更新） |
 | `rwkv7_chat.py` | 对话层：system 提示词、状态缓存、停止符、重复惩罚、流式输出 |
-| `rwkv7_http.py` | 常驻 HTTP 服务：`/chat`、`/chat/stream`(SSE)、`/health` + 静态网页托管 |
-| `web/index.html` | 网页前端（单文件，无框架/无 CDN）：气泡对话、代码块复制、长度选择 |
+| `rwkv7_http.py` | 常驻 HTTP 服务：`/chat`、`/chat/stream`(SSE)、`/health`、`/tier` + 静态网页托管 |
+| `web/index.html` | 网页前端（单文件，无框架/无 CDN）：气泡对话、代码块复制、长度与档位选择 |
 | `ask.sh` / `ask_q.sh` / `ask_http.py` | 命令行入口（服务在跑时自动走 HTTP，避免重复加载模型） |
-| `start_service.sh` / `boot_all.sh` / `check_service.sh` | 起停、开机自恢复、健康看门狗 |
+| `tiers.json` / `service.tier` | 档位表与当前档位（默认均衡档，跨重启持久） |
+| `start_service.sh` / `service_supervisor.sh` | 起停与档位监督（退出码 75 = 换档重启） |
+| `boot_all.sh` / `check_service.sh` | 开机自恢复、健康看门狗 |
+| `test_tier.py` / `quality_cmp.sh` | 档位切换自检、三档文本质量对照 |
 
 **模型转换与编译**
 
@@ -101,7 +105,20 @@ bash start_service.sh 8000
 
 - 网页：`http://<设备IP>:8000/`
 - 命令行：`./ask.sh "什么是熵？" 128`
-- 接口：`POST /chat`、`GET /chat/stream?q=...&tokens=128`（SSE）、`GET /health`
+- 接口：`POST /chat`、`GET /chat/stream?q=...&tokens=128`（SSE）、`GET /health`、`GET /tier`
+
+### 2.1 切换推理档位
+
+网页底部下拉直接选（服务会提示"正在切换…约 45 秒"，期间不能提问），或在设备上：
+
+```bash
+cd /home/disk/models/rwkv7-2.9b
+echo fast > service.tier          # precise / balanced / fast
+bash start_service.sh stop && bash start_service.sh 8000
+```
+
+换档本质是重新加载 `.om`（int8 层是独立的 `.om`），所以约 45 秒；`POST /tier {"tier":"fast"}`
+由服务自己退出（退出码 75）、`service_supervisor.sh` 按新档位拉起，开机自启也按 `service.tier` 走。
 
 ### 3. 远程操作（开发机）
 
@@ -113,7 +130,12 @@ python atlas.py put 本地文件 /home/disk/...
 
 ## 量化实验结果（重要）
 
-目标是进一步提速，但在这台设备上**int8 无法兼顾质量**，实测数据：
+> **2026-09-23 更正**：下面这张表是**校准采样时序错误**时的结论。定位到旧校准脚本在层执行
+> **之后**读输入缓冲（引擎的状态是原地更新的，取到的是"更新后的状态"），修正后全量 int8 的
+> logits KL 从 10.982 降到 0.945、top-1 一致率从 0% 升到 67.2%，**"int8 不可用"不再成立**。
+> 详见 `P0_校准与参考一致性_报告.md`、`P2_量化对照实验_报告.md`、`P3_混合精度_报告.md`。
+
+（旧结论，保留备查）目标是进一步提速，但当时实测 int8 无法兼顾质量：
 
 | 方案 | 速度 | 体积 | 输出质量 |
 | --- | --- | --- | --- |
@@ -132,6 +154,20 @@ python atlas.py put 本地文件 /home/disk/...
 per-channel/per-token 激活量化、没有 SmoothQuant、也没有仅权重量化（W8A16）。设备带宽大头
 是权重（每 token 读 5.2 GB），激活只占 22 MB，所以"只压权重、激活保 fp16"这条路本可以对症，
 但工具链里没有对应的可用算子。
+
+### 修正后的结论与三档部署形态（2026-09-24）
+
+| 档位 | 配置 | 全序列 KL | top-1 一致 | 实测速度 |
+| --- | --- | --- | --- | --- |
+| 精确档 precise | 全部 fp16 | 0（基准） | 100% | 5.0 tok/s |
+| **均衡档 balanced（默认）** | 8 层 int8（layer 6/11/13/15/17/18/24/28） | 0.019 | 93.8% | 5.8 tok/s |
+| 快速档 fast | 16 层 int8 | 0.049 | 92.2% | 7.0 tok/s |
+| 实验档（未部署） | 33 层全量 int8 | 0.945 | 67.2% | 12.0 tok/s |
+
+选层依据是逐层敏感度实测（最敏感：layer9 0.441、layer0 0.189、layer1 0.091、layer21 0.082；
+27/33 个目标 KL<0.02）。另外修掉一个把 int8 档拖下水的显示 bug：`find_stop()` 的边界字符集
+漏了反引号，模型在围栏后不换行直接续写 `User:` 时会漏出来（表现为"回答尾部多出一段自问自答"），
+补上反引号后三档输出都干净。
 
 ## 7.2B 可行性
 

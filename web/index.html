@@ -80,6 +80,9 @@ select{font-size:13px;padding:7px 8px;border-radius:10px;border:1px solid var(--
   <div class="input-row">
     <textarea id="q" placeholder="输入问题…（Enter 发送，Shift+Enter 换行）"></textarea>
     <div class="actions">
+      <select id="tier" title="推理档位：精确=全部 fp16｜均衡=8 层 int8｜快速=16 层 int8。切换要重新加载模型，约 45 秒">
+        <option>档位…</option>
+      </select>
       <select id="len" title="最多生成多少 token">
         <option value="64">64 token</option>
         <option value="128" selected>128 token</option>
@@ -90,7 +93,7 @@ select{font-size:13px;padding:7px 8px;border-radius:10px;border:1px solid var(--
       <button id="send">发送</button>
       <button id="new" class="ghost">新对话</button>
       <span class="spacer"></span>
-      <span class="tip">生成期间请稍等，约 5.5 token/s</span>
+      <span class="tip" id="tip">生成期间请稍等</span>
     </div>
   </div>
 </footer>
@@ -104,8 +107,11 @@ const newBtn = document.getElementById('new');
 const lenEl = document.getElementById('len');
 const dot = document.getElementById('dot');
 const statusText = document.getElementById('statusText');
+const tierEl = document.getElementById('tier');
+const tipEl = document.getElementById('tip');
 let hint = document.getElementById('hint');
 let busy = false;
+let switching = false;
 let es = null;
 const ROLE_PREFIX = /^\s*(?:课程助手|助手|AI助手|Assistant)\s*[：:]\s*/;
 function clean(t){ return t.replace(ROLE_PREFIX, ''); }
@@ -131,8 +137,83 @@ function addBubble(role){
 
 function setBusy(v){
   busy = v;
-  sendBtn.disabled = v;
+  sendBtn.disabled = v || switching;
   sendBtn.textContent = v ? '生成中…' : '发送';
+}
+
+/* 在消息区插一条系统提示（切换档位、连接异常这类） */
+function addSystem(text){
+  hideHint();
+  const d = document.createElement('div');
+  d.className = 'hint';
+  d.textContent = text;
+  msgs.appendChild(d);
+  scrollDown(true);
+  hint = d;                                // 下一条消息进来时自动清掉
+  return d;
+}
+
+/* 档位表来自服务端 GET /tier；老版本服务没这个接口就直接隐藏下拉框 */
+async function loadTier(){
+  if (document.activeElement === tierEl) return;       // 用户正在选，别刷他的下拉框
+  try{
+    const d = await (await fetch('/tier', {cache: 'no-store'})).json();
+    if (!d || !d.tiers || !d.tiers.length) throw new Error('无档位表');
+    if (tierEl.dataset.current === (d.current || '')
+        && tierEl.options.length === d.tiers.length) return;
+    tierEl.innerHTML = '';
+    d.tiers.forEach(function (t){
+      const o = document.createElement('option');
+      o.value = t.key;
+      o.textContent = t.label + (t.tok_s ? ' · ' + Number(t.tok_s).toFixed(1) + ' tok/s' : '');
+      o.title = t.desc || '';
+      if (t.current) o.selected = true;
+      tierEl.appendChild(o);
+    });
+    tierEl.dataset.current = d.current || '';
+    if (d.label) tipEl.textContent = '当前档位：' + d.label;
+  } catch (e){
+    tierEl.style.display = 'none';
+  }
+}
+
+/* 轮询 /health 直到服务重新就绪（换档要重新加载 .om，约 45 秒） */
+async function waitReady(){
+  for (let i = 0; i < 60; i++){
+    await new Promise(function (r){ setTimeout(r, 3000); });
+    try{
+      const d = await (await fetch('/health', {cache: 'no-store'})).json();
+      if (d && d.ok){
+        dot.className = 'dot on';
+        statusText.textContent = '在线 · ' + (d.tier_label || '');
+        tipEl.textContent = '当前档位：' + (d.tier_label || '');
+        return d.tier_label || d.tier || '就绪';
+      }
+    } catch (e){ /* 切换期间连不上是正常的 */ }
+    dot.className = 'dot';
+    statusText.textContent = '切换中…';
+  }
+  return null;
+}
+
+async function switchTier(name, label){
+  if (busy || switching) return;
+  switching = true;
+  sendBtn.disabled = true; newBtn.disabled = true;
+  qEl.disabled = true; tierEl.disabled = true;
+  const note = addSystem('正在切换到「' + label + '」，模型要重新加载（约 45 秒），这期间不能提问…');
+  try{
+    await fetch('/tier', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                          body: JSON.stringify({tier: name})});
+  } catch (e){}
+  const ok = await waitReady();
+  switching = false;
+  sendBtn.disabled = false; newBtn.disabled = false;
+  qEl.disabled = false; tierEl.disabled = false;
+  tierEl.dataset.current = name;
+  note.textContent = ok ? ('已切换到「' + ok + '」，可以继续提问。')
+                        : '切换似乎没成功，设备上执行 tail -f service.log 看原因。';
+  qEl.focus();
 }
 
 function ask(){
@@ -284,11 +365,13 @@ async function health(){
     const d = await r.json();
     dot.className = 'dot on';
     let txt = '在线';
+    if (d.tier_label) txt += ' · ' + d.tier_label;
     if (d.requests){
       txt += ' · 已答 ' + d.requests + ' 问';
       if (d.gen_s > 0) txt += ' · ' + (d.tokens / d.gen_s).toFixed(2) + ' tok/s';
     }
     statusText.textContent = txt;
+    if (d.tier_label) tipEl.textContent = '当前档位：' + d.tier_label;
   } catch (e) {
     dot.className = 'dot off';
     statusText.textContent = '连接中断';
@@ -297,6 +380,10 @@ async function health(){
 
 sendBtn.onclick = ask;
 newBtn.onclick = newChat;
+tierEl.addEventListener('change', function (){
+  const o = tierEl.options[tierEl.selectedIndex];
+  switchTier(tierEl.value, (o.textContent || '').split(' · ')[0]);
+});
 qEl.addEventListener('keydown', function (e){
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing){
     e.preventDefault();
@@ -308,7 +395,9 @@ qEl.addEventListener('input', function (){
   qEl.style.height = Math.min(qEl.scrollHeight, 180) + 'px';
 });
 setInterval(health, 30000);
+setInterval(loadTier, 60000);
 health();
+loadTier();
 qEl.focus();
 </script>
 </body>
