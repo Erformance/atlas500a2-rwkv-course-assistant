@@ -3,11 +3,14 @@
 # Why not plain `git push`: this machine uses credential.helper=manager, which in
 # a non-interactive session only pops a GUI dialog; if nobody answers it git
 # either dies with "could not read Username" or hangs forever (hit on 2026-09-24,
-# twice). So we fetch the token ourselves:
+# twice). So we fetch the token ourselves, in this order:
 #   1) $env:GH_TOKEN
-#   2) .github_token next to this script (first line; gitignored)
+#   2) .github_token next to this script (first line; gitignored)  <- preferred
 #   3) the Windows Credential Store entry written by "GitHub for Visual Studio"
-#      (read with CredRead; works even when GCM would pop a dialog)
+#      (read with CredRead)
+# NOTE (2026-09-24): the credential found in (3) on this machine is an expired
+# `gho_` OAuth token - the GitHub API answers 401 for it, so (3) is only a
+# fallback. Put a PAT with repo scope in .github_token for reliable pushes.
 # Then we push with http.<url>.extraheader Basic auth, so the token never lands in
 # the remote URL or git's error output, and it is masked in this script's output.
 #
