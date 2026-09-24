@@ -1,6 +1,7 @@
 # ---- 凭据与私钥（绝对不能提交） ----
 .ssh/
 atlas.env
+.github_token
 *.pem
 *.key
 id_rsa*
@@ -35,3 +36,9 @@ mem_guard.log
 autopoweroff.log
 service.pid
 service.busy
+service.tier
+experiment.lock
+experiment_guard.log
+quality_cmp.log
+quality_fix.log
+autopoweroff_wrap.log
