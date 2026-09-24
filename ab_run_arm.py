@@ -29,15 +29,23 @@ def main():
     parser.add_argument("--plan-json", default="",
                         help='逐层计划，如 \'{"suffix":"_cp_q","layers":[5],"head":false}\'')
     parser.add_argument("--tokens", type=int, default=64)
-    parser.add_argument("--text", default="pilot", choices=["pilot", "mixed"],
-                        help="pilot=自然问答文本；mixed=代码为主的混合文本")
+    parser.add_argument("--text", default="pilot",
+                        choices=["pilot", "mixed", "p1val", "p1test"],
+                        help="pilot=自然问答文本；mixed=代码为主的混合文本；"
+                             "p1val/p1test=P1 语料里独立分割的验证/测试文本")
     parser.add_argument("--decode-steps", type=int, default=32)
     parser.add_argument("--out", required=True)
     parser.add_argument("--meta", default="")
     args = parser.parse_args()
 
     tokenizer = Tokenizer.from_file(os.path.join(MODEL_DIR, "tokenizer.json"))
-    text = MIXED_TEXT if args.text == "mixed" else PILOT_TEXT
+    if args.text == "mixed":
+        text = MIXED_TEXT
+    elif args.text in ("p1val", "p1test"):
+        import p1_corpus                       # 与校准分割不重叠
+        text = p1_corpus.text_for(args.text[2:])
+    else:
+        text = PILOT_TEXT
     ids = tokenizer.encode(text).ids[: args.tokens]
 
     plan = json.loads(args.plan_json) if args.plan_json else None
