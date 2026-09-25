@@ -63,7 +63,7 @@ for i in $LAYERS; do
   echo "[$(date +%H:%M:%S)] === layer$i"
   simplify "$i" || { echo "  简化失败"; continue; }
   if [ ! -s "$q" ]; then
-    echo "  量化（calib_p1/layer$(printf %02d $i).npz）…"
+    echo "  量化（$(basename "$CALIB")/layer$(printf %02d $i).npz）…"
     quantize "layer${i}" "$MODEL_DIR/layer${i}_sim.onnx" "$q" "layer$(printf %02d $i).npz" \
         || { echo "  量化失败"; continue; }
   fi
