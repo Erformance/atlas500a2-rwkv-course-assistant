@@ -21,11 +21,24 @@ source /home/disk/cann80base/ascend-toolkit/set_env.sh
 echo
 echo "########## P2-B 开始 $(date '+%F %T') ##########"
 
+# 单实例保护（两份链同时跑会互相删锁、把服务引回来抢内存 → 245000）
+for p in $(pgrep -f "bash $(basename "$0")"); do
+  [ "$p" != "$$" ] && { echo "已有另一份 $(basename "$0") 在跑（pid $p），退出"; exit 1; }
+done
+
 bash start_service.sh stop
+for i in $(seq 1 24); do
+  avail=$(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo)
+  [ "$avail" -gt 6000 ] && break
+  sleep 5
+done
+echo "启动前可用内存 ${avail}MB"
+
 touch "$MODEL_DIR/experiment.lock"
+MINE=1
 pgrep -f experiment_guard.sh > /dev/null || \
     setsid nohup bash experiment_guard.sh > /dev/null 2>&1 &
-trap 'rm -f "$MODEL_DIR/experiment.lock"; pkill -f experiment_guard.sh' EXIT
+trap '[ "$MINE" = "1" ] && rm -f "$MODEL_DIR/experiment.lock"; pkill -f experiment_guard.sh' EXIT
 free -m | head -2
 
 # 1) 两组等样本数校准数据（各 32 组）
@@ -82,8 +95,6 @@ ls -l p2b_compare_*.json 2>/dev/null
 rm -f "$MODEL_DIR/experiment.lock"
 pkill -f experiment_guard.sh 2>/dev/null
 trap - EXIT
-sync
-sleep 3
-echo "########## P2-B 完成，强制断电 $(date '+%F %T') ##########"
-sync
-poweroff -f
+sleep 2
+bash start_service.sh 8000
+echo "########## P2-B 完成（网页服务已恢复）$(date '+%F %T') ##########"

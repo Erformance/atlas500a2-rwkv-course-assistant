@@ -48,27 +48,35 @@ def kl(a, b):
 
 
 def free_run(engine, prefix_ids, n_tokens):
+    """贪心自由生成；返回 (tokens, logits)。logits[t] = 预测 tokens[t] 的那一步。"""
     engine.reset_state()
+    t0 = time.time()
     logits = None
     for tok in prefix_ids:
         logits = engine.step(int(tok))
+    prefill_s = time.time() - t0
     logits = logits.copy()
     toks, lgs = [], []
+    t1 = time.time()
     for _ in range(n_tokens):
         nxt = int(np.argmax(logits))
         toks.append(nxt)
         lgs.append(logits.copy())
         logits = engine.step(nxt)
-    return toks, np.stack(lgs)
+    decode_s = time.time() - t1
+    return toks, np.stack(lgs), prefill_s, decode_s
 
 
 def forced_run(engine, prefix_ids, tokens):
+    """把给定 token 序列喂进去，返回每一步**预测该 token** 的 logits（与 free_run 对齐）。"""
     engine.reset_state()
+    logits = None
     for tok in prefix_ids:
-        engine.step(int(tok))
+        logits = engine.step(int(tok))
     lgs = []
     for tok in tokens:
-        lgs.append(engine.step(int(tok)).copy())
+        lgs.append(logits.copy())          # 先取预测，再喂 token
+        logits = engine.step(int(tok))
     return np.stack(lgs)
 
 
@@ -99,14 +107,13 @@ def main():
             t0 = time.time()
             engine = Engine(MODEL_DIR)
             load_s = time.time() - t0
-            t1 = time.time()
-            toks, lgs = free_run(engine, prefix_ids, args.tokens)
-            run_s = time.time() - t1
+            toks, lgs, prefill_s, decode_s = free_run(engine, prefix_ids, args.tokens)
             np.save(logits_path, lgs)
             with open(tok_path, "w") as fh:
                 json.dump(toks, fh)
             entry = {"kind": "reference", "load_s": round(load_s, 1),
-                     "decode_tok_s": round(args.tokens / max(run_s, 1e-6), 2),
+                     "prefill_s": round(prefill_s, 2),
+                     "decode_tok_s": round(args.tokens / max(decode_s, 1e-6), 2),
                      "text": tokenizer.decode(toks)[:200]}
         else:
             cand = next(c for c in CANDIDATES if c["name"] == args.candidate)
@@ -117,19 +124,26 @@ def main():
                 engine = Engine(MODEL_DIR, plan=plan)
             else:
                 engine = Engine(MODEL_DIR, suffix=cand.get("suffix", "_p1_q"))
-            t1 = time.time()
-            toks, lgs = free_run(engine, prefix_ids, args.tokens)
-            run_s = time.time() - t1
+            toks, lgs, prefill_s, decode_s = free_run(engine, prefix_ids, args.tokens)
             flgs = forced_run(engine, prefix_ids, ref_toks)
             div = next((i for i, (a, b) in enumerate(zip(toks, ref_toks)) if a != b), None)
-            kl_forced = float(np.mean([kl(ref_lgs[t], flgs[t]) for t in range(args.tokens)]))
-            kl_free = float(np.mean([kl(ref_lgs[t], lgs[t]) for t in range(args.tokens)]))
+            steps = range(args.tokens)
+            kl_forced = float(np.mean([kl(ref_lgs[t], flgs[t]) for t in steps]))
+            kl_free = float(np.mean([kl(ref_lgs[t], lgs[t]) for t in steps]))
+            # 自由生成要分"分歧前/后"看：分歧前两条轨迹上下文相同，之后是不同上下文之间的比较
+            cut = div if div is not None else args.tokens
+            kl_free_pre = float(np.mean([kl(ref_lgs[t], lgs[t]) for t in range(cut)])) if cut else None
+            post = list(range(cut, args.tokens))
+            kl_free_post = float(np.mean([kl(ref_lgs[t], lgs[t]) for t in post])) if post else None
             entry = {"kind": "arm", "n_int8": engine.n_quant,
                      "forced_kl_mean": round(kl_forced, 4),
                      "free_kl_mean": round(kl_free, 4),
+                     "free_kl_before_diverge": round(kl_free_pre, 4) if kl_free_pre is not None else None,
+                     "free_kl_after_diverge": round(kl_free_post, 4) if kl_free_post is not None else None,
                      "amplify": round(kl_free / max(kl_forced, 1e-9), 3),
                      "diverge_step": div,
-                     "decode_tok_s": round(args.tokens / max(run_s, 1e-6), 2),
+                     "prefill_s": round(prefill_s, 2),
+                     "decode_tok_s": round(args.tokens / max(decode_s, 1e-6), 2),
                      "text": tokenizer.decode(toks)[:200]}
         with open(args.out_part, "w") as fh:
             json.dump(entry, fh, ensure_ascii=False, indent=2)
