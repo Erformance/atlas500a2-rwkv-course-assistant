@@ -14,8 +14,12 @@ PY_RWKV7=/home/disk/miniconda3/envs/rwkv7/bin/python
 PY_QUANT=/home/disk/miniconda3/envs/quant/bin/python
 CANN_ENV=/home/disk/cann80base/ascend-toolkit/set_env.sh
 TBE_PY=/home/disk/miniconda3/envs/npu22/bin
-CALIB=$MODEL_DIR/calib_p1
-SUFFIX=_p1_q
+# 可用环境变量覆盖，方便做对照臂（例如 P2-B 的等样本数实验）：
+#   CALIB=.../calib_b0 SUFFIX=_b0_q LOG_PREFIX=b0 BUILD_HEAD=0 bash build_p1_layers.sh 24 6 11 …
+CALIB=${CALIB:-$MODEL_DIR/calib_p1}
+SUFFIX=${SUFFIX:-_p1_q}
+LOG_PREFIX=${LOG_PREFIX:-p1}
+BUILD_HEAD=${BUILD_HEAD:-1}
 
 if [ "$#" -gt 0 ]; then
   LAYERS="$@"
@@ -31,13 +35,13 @@ import onnx
 from onnxsim import simplify
 m = onnx.load('$src'); sm, ok = simplify(m); onnx.save(sm, '$sim')
 print('simplify ok', ok)
-" > "$MODEL_DIR/simplify_p1_layer${i}.log" 2>&1
+" > "$MODEL_DIR/simplify_${LOG_PREFIX}_layer${i}.log" 2>&1
   [ -f "$sim" ]
 }
 
 quantize() {   # $1=名字  $2=sim  $3=out  $4=npz
   nice -n 19 "$PY_QUANT" "$MODEL_DIR/quantize_layer_calib.py" "$2" "$3" \
-      --calib "$CALIB/$4" --method 1 > "$MODEL_DIR/quant_p1_$1.log" 2>&1
+      --calib "$CALIB/$4" --method 1 > "$MODEL_DIR/quant_${LOG_PREFIX}_$1.log" 2>&1
   [ -s "$3" ]
 }
 
@@ -48,7 +52,7 @@ compile_om() { # $1=onnx  $2=out前缀
     export TE_PARALLEL_COMPILER=1
     nice -n 19 atc --model="$1" --framework=5 --output="$2" \
         --soc_version=Ascend310B1 --input_format=ND --log=error
-  ) > "$MODEL_DIR/atc_p1_$(basename "$2").log" 2>&1
+  ) > "$MODEL_DIR/atc_${LOG_PREFIX}_$(basename "$2").log" 2>&1
   [ -f "$2.om" ]
 }
 
@@ -69,8 +73,8 @@ for i in $LAYERS; do
   echo "[$(date +%H:%M:%S)] layer$i OK"
 done
 
-# 输出头：head 的输入是第 31 层的 x 输出，用 calib_p1 的真实输入重跑一遍 fp16 layer31 得到
-if [ ! -f "$MODEL_DIR/head${SUFFIX}.om" ]; then
+# 输出头：head 的输入是第 31 层的 x 输出，用同一份校准数据重跑一遍 fp16 layer31 得到
+if [ "$BUILD_HEAD" = "1" ] && [ ! -f "$MODEL_DIR/head${SUFFIX}.om" ]; then
   echo "[$(date +%H:%M:%S)] === head"
   if [ ! -f "$CALIB/head.npz" ]; then
     . "$CANN_ENV"
@@ -82,4 +86,4 @@ if [ ! -f "$MODEL_DIR/head${SUFFIX}.om" ]; then
       && rm -f "$MODEL_DIR/head${SUFFIX}.onnx"
 fi
 
-echo "[$(date +%H:%M:%S)] P1 完成：$(ls "$MODEL_DIR"/layer*${SUFFIX}.om 2>/dev/null | wc -l)/32 层，head $([ -f "$MODEL_DIR/head${SUFFIX}.om" ] && echo OK || echo 缺)"
+echo "[$(date +%H:%M:%S)] ${LOG_PREFIX} 完成：$(ls "$MODEL_DIR"/layer*${SUFFIX}.om 2>/dev/null | wc -l)/32 层，head $([ -f "$MODEL_DIR/head${SUFFIX}.om" ] && echo OK || echo 缺)"

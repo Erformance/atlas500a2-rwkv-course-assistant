@@ -7,14 +7,14 @@
   },
   "balanced": {
     "label": "均衡档",
-    "desc": "8 层 int8（layer 6/11/13/15/17/18/24/28）· 全序列 KL 0.019 · top-1 一致 93.8%",
-    "plan": "plan_top8.json",
-    "tok_s": 5.8
+    "desc": "8 层 int8（layer 24/6/11/22/23/20/25/28，P1 新校准）· 全序列 KL 0.0141 · top-1 一致 90.6%",
+    "plan": "plan_p1_top8.json",
+    "tok_s": 5.6
   },
   "fast": {
     "label": "快速档",
-    "desc": "16 层 int8 · 全序列 KL 0.049 · top-1 一致 92.2%",
-    "plan": "plan_top16.json",
-    "tok_s": 7.0
+    "desc": "16 层 int8（P1 新校准）· 全序列 KL 0.0314 · top-1 一致 98.4%",
+    "plan": "plan_p1_top16.json",
+    "tok_s": 6.6
   }
 }
