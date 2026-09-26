@@ -1,5 +1,48 @@
 # Atlas 500 A2 部署进度
 
+## 2026-09-26：P4 基线评估（lm-evaluation-harness 接自定义 backend）
+
+### 一、把 harness 接到 NPU 引擎上
+
+| 组件 | 说明 |
+| --- | --- |
+| 版本 | `lm-eval==0.4.13`，装在独立 venv `/home/disk/lmeval`（`--system-site-packages` 复用 npu22 的 torch/tokenizers，不动推理环境） |
+| 打分服务 | `p4_score_server.py`：加载一次引擎，HTTP 暴露 `loglikelihood` / `loglikelihood_rolling` / `generate_until`，与网页服务同一套 Engine、同一份 `.om`、同一个 tokenizer |
+| backend | `p4_lm_eval_backend.py`（注册 `rwkv7_npu`）+ `p4_run_eval.py`（调 `lm_eval.simple_evaluate`） |
+| 数据缓存 | `HF_HOME=/home/disk/hf_cache`、`HF_ENDPOINT=https://hf-mirror.com` |
+
+### 二、结果（piqa + lambada_openai，各取前 200 题，同一子集）
+
+| 指标 | 精确档 fp16 | 均衡档 p1 top8 | 差值 |
+| --- | --- | --- | --- |
+| PIQA acc | **0.790** | **0.780** | −1.0 pp |
+| PIQA acc_norm | 0.795 | 0.790 | −0.5 pp |
+| LAMBADA acc | **0.715** | **0.700** | −1.5 pp |
+| LAMBADA perplexity | **3.7745** | **4.2484** | **+12.5%** |
+| 耗时 | 6291 s | 5086 s | 快 1.24× |
+
+**判读**：准确率基本无损（差 2~3 题，噪声范围）；**困惑度 +12.5%**——说明准确率类指标对这类
+量化不敏感、概率分布类指标敏感，与 P2-C/P2-F 的结论同向。速度收益与 P5 的 decode 比值一致。
+fp16 下 PIQA 79.0% / LAMBADA 71.5% 属 2.9B 量级合理区间，说明部署链路没把模型跑歪。
+
+### 三、为什么只能做子集
+
+实测约 15 s/题（fp16，PIQA），折算四任务全量：PIQA 7.7 h + LAMBADA 11.4 h + ARC-Easy 7.9 h +
+HellaSwag 55.8 h ≈ **83 h/档位**，本机不可行。因此采用固定子集 + 保留样本级明细 +
+报告里给出折算全量成本。**口径限制**：子集非全量、无 bootstrap 置信区间、未做 CPU↔OM 逐题对照。
+
+### 四、过程中的运维修复
+
+设备**根分区 5.9G 满**（HF 缓存默认写 `/root/.cache`）：清 pip 缓存 1.17G、
+把 `/root/rwkv_project`（679MB）挪到 `/home/disk/old_root_rwkv_project`（可恢复）、
+`HF_HOME` 指到大盘；根分区从 100% 降到 74%。
+
+### 五、P4 未做项
+
+① CPU↔OM **逐题**对照（P0-D 只做过逐步 logits 对照）；② RWKVQuant 复现（本机无 VQ kernel，
+协议允许标"该设备未实现"，只能做准确率—存储对照）；③ 第二个更小 RWKV-7 checkpoint
+（需重走导出+编译+校准，约 4.5 h）；④ 100~200 道中文课程题盲评集；⑤ ARC/HellaSwag 子集。
+
 ## 2026-09-25 晚：P5 性能矩阵（协议 §7）完成
 
 ### 一、固定工作量矩阵（4 臂 × 前缀 32/128/512/1024 + 2048 补测，decode 128，各 5 次重复）
