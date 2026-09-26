@@ -15,7 +15,7 @@ import os
 
 import numpy as np
 
-MODEL_DIR = "/home/disk/models/rwkv7-2.9b"
+MODEL_DIR = os.environ.get("RWKV_MODEL_DIR", "/home/disk/models/rwkv7-2.9b")
 LAYERS = 32
 
 

@@ -9,7 +9,7 @@
 #
 # 注意：实验期间由调用方持有 experiment.lock（p1_chain.sh 负责），本脚本不碰锁。
 
-MODEL_DIR=/home/disk/models/rwkv7-2.9b
+MODEL_DIR=${MODEL_DIR:-/home/disk/models/rwkv7-2.9b}
 PY_RWKV7=/home/disk/miniconda3/envs/rwkv7/bin/python
 PY_QUANT=/home/disk/miniconda3/envs/quant/bin/python
 CANN_ENV=/home/disk/cann80base/ascend-toolkit/set_env.sh

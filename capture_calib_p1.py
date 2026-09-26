@@ -25,7 +25,7 @@ import time
 
 import numpy as np
 
-MODEL_DIR = "/home/disk/models/rwkv7-2.9b"
+MODEL_DIR = os.environ.get("RWKV_MODEL_DIR", "/home/disk/models/rwkv7-2.9b")
 sys.path.insert(0, MODEL_DIR)
 
 # 直接跑本脚本时 CANN 环境未必 source 过，pyACL 的 python 包就找不到 → 自己补上
