@@ -14,7 +14,7 @@ import time
 
 import numpy as np
 
-MODEL_DIR = "/home/disk/models/rwkv7-2.9b"
+MODEL_DIR = os.environ.get("RWKV_MODEL_DIR", "/home/disk/models/rwkv7-2.9b")
 sys.path.insert(0, MODEL_DIR)
 
 import acl                                            # noqa: E402

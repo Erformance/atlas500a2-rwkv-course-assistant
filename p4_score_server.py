@@ -31,7 +31,7 @@ import sys
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-MODEL_DIR = "/home/disk/models/rwkv7-2.9b"
+MODEL_DIR = os.environ.get("RWKV_MODEL_DIR", "/home/disk/models/rwkv7-2.9b")
 sys.path.insert(0, MODEL_DIR)
 # 直接跑本脚本时 CANN 环境未必 source 过，pyACL 的 python 包就找不到 → 自己补上
 for _p in ("/home/disk/cann80base/ascend-toolkit/latest/python/site-packages",
@@ -79,7 +79,10 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             self._send(400, {"error": "bad json: %s" % exc})
             return
-        if self.path.startswith("/loglikelihood"):
+        # 注意顺序：/loglikelihood_detail 必须先判断，否则会被 /loglikelihood 前缀吃掉
+        if self.path.startswith("/loglikelihood_detail"):
+            self._send(200, {"results": self._loglikelihood(req.get("requests", []), detail=True)})
+        elif self.path.startswith("/loglikelihood"):
             self._send(200, {"results": self._loglikelihood(req.get("requests", []))})
         elif self.path.startswith("/loglikelihood_rolling"):
             self._send(200, {"results": self._rolling(req.get("requests", []))})
@@ -89,7 +92,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"error": "not found"})
 
     # ------------------------------------------------------------------ 打分
-    def _loglikelihood(self, requests):
+    def _loglikelihood(self, requests, detail=False):
         t0 = time.time()
         out = []
         for ctx, cont in requests:
@@ -103,13 +106,22 @@ class Handler(BaseHTTPRequestHandler):
                 out.append([0.0, False])
                 continue
             total, greedy = 0.0, True
+            per_token, preds = [], []
             for tok in ids_cont:
                 lp = log_softmax(logits)
-                total += float(lp[int(tok)])
+                val = float(lp[int(tok)])
+                total += val
+                per_token.append(round(val, 6))
+                preds.append(int(logits.argmax()))
                 if int(logits.argmax()) != int(tok):
                     greedy = False
                 logits = ENGINE.step(int(tok))
-            out.append([round(total, 6), bool(greedy)])
+            if detail:
+                out.append({"sum_logp": round(total, 6), "is_greedy": bool(greedy),
+                            "logp": per_token, "argmax": preds,
+                            "n_ctx": len(ids_ctx), "cont_ids": [int(t) for t in ids_cont]})
+            else:
+                out.append([round(total, 6), bool(greedy)])
             STATS["loglikelihood_pairs"] += 1
             STATS["prefill_tokens"] += len(ids_ctx) + len(ids_cont)
         STATS["loglikelihood_calls"] += 1

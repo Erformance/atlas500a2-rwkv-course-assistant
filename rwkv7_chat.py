@@ -28,7 +28,7 @@ from tokenizers import Tokenizer
 sys.path.insert(0, "/home/disk/models/rwkv7-2.9b")
 from rwkv7_serve2 import Engine  # noqa: E402
 
-MODEL_DIR = "/home/disk/models/rwkv7-2.9b"
+MODEL_DIR = os.environ.get("RWKV_MODEL_DIR", "/home/disk/models/rwkv7-2.9b")
 STATE_CACHE_DIR = os.path.join(MODEL_DIR, "state_cache")
 
 DEFAULT_SYSTEM = (
