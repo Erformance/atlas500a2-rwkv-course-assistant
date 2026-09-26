@@ -19,7 +19,17 @@ import time
 
 import numpy as np
 
-HIDDEN, HEADS, HEAD_DIM, LAYERS, VOCAB = 2560, 40, 64, 32, 65536
+# 模型维度从模型目录的 config.json 读，默认仍是 2.9B；跨规模实验用
+#   RWKV_MODEL_DIR=/home/disk/models/rwkv7-1.5b ...
+# 切换即可（1.5B：hidden 2048 / 24 层 / 32 heads）。
+MODEL_DIR = os.environ.get("RWKV_MODEL_DIR", "/home/disk/models/rwkv7-2.9b")
+with open(os.path.join(MODEL_DIR, "config.json")) as _fh:
+    _cfg = json.load(_fh)
+HIDDEN = int(_cfg["hidden_size"])
+HEADS = int(_cfg["num_heads"])
+HEAD_DIM = int(_cfg["head_dim"])
+LAYERS = int(_cfg["num_hidden_layers"])
+VOCAB = int(_cfg["vocab_size"])
 ACL_H2D, ACL_D2H = 1, 2
 X_BYTES = HIDDEN * 4
 WKV_BYTES = HEADS * HEAD_DIM * HEAD_DIM * 4
