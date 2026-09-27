@@ -15,8 +15,12 @@ import os
 
 import numpy as np
 
-MODEL_DIR = "/home/disk/models/rwkv7-2.9b"
-LAYERS = 32
+MODEL_DIR = os.environ.get("RWKV_MODEL_DIR", "/home/disk/models/rwkv7-2.9b")
+# 层数从 config.json 读：2.9B 是 32 层、1.5B 是 24 层（早期这里写死 32，
+# 导致 1.5B 打包到 layer24 就报错退出）
+import json as _json
+with open(os.path.join(MODEL_DIR, "config.json")) as _fh:
+    LAYERS = int(_json.load(_fh)["num_hidden_layers"])
 
 
 def main():

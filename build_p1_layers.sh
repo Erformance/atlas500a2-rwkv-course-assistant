@@ -9,7 +9,7 @@
 #
 # 注意：实验期间由调用方持有 experiment.lock（p1_chain.sh 负责），本脚本不碰锁。
 
-MODEL_DIR=/home/disk/models/rwkv7-2.9b
+MODEL_DIR=${MODEL_DIR:-/home/disk/models/rwkv7-2.9b}
 PY_RWKV7=/home/disk/miniconda3/envs/rwkv7/bin/python
 PY_QUANT=/home/disk/miniconda3/envs/quant/bin/python
 CANN_ENV=/home/disk/cann80base/ascend-toolkit/set_env.sh
@@ -20,6 +20,8 @@ CALIB=${CALIB:-$MODEL_DIR/calib_p1}
 SUFFIX=${SUFFIX:-_p1_q}
 LOG_PREFIX=${LOG_PREFIX:-p1}
 BUILD_HEAD=${BUILD_HEAD:-1}
+# 脚本目录与模型目录可能不同（跨规模实验时脚本在 2.9B 目录、模型在 1.5B 目录）
+SCRIPT_DIR=${SCRIPT_DIR:-$MODEL_DIR}
 
 if [ "$#" -gt 0 ]; then
   LAYERS="$@"
@@ -40,7 +42,7 @@ print('simplify ok', ok)
 }
 
 quantize() {   # $1=名字  $2=sim  $3=out  $4=npz
-  nice -n 19 "$PY_QUANT" "$MODEL_DIR/quantize_layer_calib.py" "$2" "$3" \
+  nice -n 19 "$PY_QUANT" "$SCRIPT_DIR/quantize_layer_calib.py" "$2" "$3" \
       --calib "$CALIB/$4" --method 1 > "$MODEL_DIR/quant_${LOG_PREFIX}_$1.log" 2>&1
   [ -s "$3" ]
 }
@@ -78,7 +80,7 @@ if [ "$BUILD_HEAD" = "1" ] && [ ! -f "$MODEL_DIR/head${SUFFIX}.om" ]; then
   echo "[$(date +%H:%M:%S)] === head"
   if [ ! -f "$CALIB/head.npz" ]; then
     . "$CANN_ENV"
-    "$TBE_PY/python" "$MODEL_DIR/make_head_calib.py" --calib-dir "$CALIB" || exit 1
+    "$TBE_PY/python" "$SCRIPT_DIR/make_head_calib.py" --calib-dir "$CALIB" || exit 1
   fi
   [ -s "$MODEL_DIR/head${SUFFIX}.onnx" ] || quantize head "$MODEL_DIR/head_sim.onnx" \
       "$MODEL_DIR/head${SUFFIX}.onnx" head.npz

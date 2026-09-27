@@ -18,7 +18,9 @@ import sys
 
 import numpy as np
 
-MODEL_DIR = "/home/disk/models/rwkv7-2.9b"
+MODEL_DIR = os.environ.get("RWKV_MODEL_DIR", "/home/disk/models/rwkv7-2.9b")
+# 辅助脚本（ab_run_arm.py 等）可能在另一个目录（跨规模实验时脚本在 2.9B 目录）
+SCRIPT_DIR = os.environ.get("RWKV_SCRIPT_DIR", MODEL_DIR)
 PY = "/home/disk/miniconda3/envs/npu22/bin/python"
 
 
@@ -50,7 +52,11 @@ def main():
 
     ref = np.load(args.ref)["logits"]
     if args.targets == "all":
-        targets = ["head"] + [str(i) for i in range(32)]
+        # 层数按模型 config 走（2.9B=32、1.5B=24），head 也一并测
+        import json as _json
+        with open(os.path.join(MODEL_DIR, "config.json")) as _fh:
+            n_layer = int(_json.load(_fh)["num_hidden_layers"])
+        targets = ["head"] + [str(i) for i in range(n_layer)]
     else:
         targets = args.targets.split(",")
 
@@ -68,7 +74,7 @@ def main():
         else:
             plan = {"suffix": args.suffix, "layers": [int(t)], "head": False}
         tmp = "/tmp/arm_sens_%s.npz" % t
-        cmd = [PY, os.path.join(MODEL_DIR, "ab_run_arm.py"),
+        cmd = [PY, os.path.join(SCRIPT_DIR, "ab_run_arm.py"),
                "--plan-json", json.dumps(plan), "--tokens", str(args.tokens),
                "--text", args.text,
                "--out", tmp]
