@@ -1,0 +1,140 @@
+{
+  "reference": "arm_fp16.npz",
+  "suffix": "_p1_q",
+  "tokens": 64,
+  "text": "pilot",
+  "targets": {
+    "head": {
+      "kl_mean": 0.0097,
+      "top1_agreement": 0.9844
+    },
+    "0": {
+      "kl_mean": 0.1644,
+      "top1_agreement": 0.875
+    },
+    "1": {
+      "kl_mean": 0.1688,
+      "top1_agreement": 0.8438
+    },
+    "2": {
+      "kl_mean": 0.0126,
+      "top1_agreement": 0.9688
+    },
+    "3": {
+      "kl_mean": 0.0144,
+      "top1_agreement": 0.9375
+    },
+    "4": {
+      "kl_mean": 0.0092,
+      "top1_agreement": 0.9531
+    },
+    "5": {
+      "kl_mean": 0.0053,
+      "top1_agreement": 1.0
+    },
+    "6": {
+      "kl_mean": 0.0009,
+      "top1_agreement": 0.9844
+    },
+    "7": {
+      "kl_mean": 0.0019,
+      "top1_agreement": 1.0
+    },
+    "8": {
+      "kl_mean": 0.0176,
+      "top1_agreement": 0.9375
+    },
+    "9": {
+      "kl_mean": 0.4528,
+      "top1_agreement": 0.7656
+    },
+    "10": {
+      "kl_mean": 0.002,
+      "top1_agreement": 0.9688
+    },
+    "11": {
+      "kl_mean": 0.0013,
+      "top1_agreement": 0.9844
+    },
+    "12": {
+      "kl_mean": 0.0037,
+      "top1_agreement": 1.0
+    },
+    "13": {
+      "kl_mean": 0.003,
+      "top1_agreement": 0.9844
+    },
+    "14": {
+      "kl_mean": 0.004,
+      "top1_agreement": 0.9688
+    },
+    "15": {
+      "kl_mean": 0.0043,
+      "top1_agreement": 0.9844
+    },
+    "16": {
+      "kl_mean": 0.0041,
+      "top1_agreement": 1.0
+    },
+    "17": {
+      "kl_mean": 0.0024,
+      "top1_agreement": 1.0
+    },
+    "18": {
+      "kl_mean": 0.0036,
+      "top1_agreement": 1.0
+    },
+    "19": {
+      "kl_mean": 0.0055,
+      "top1_agreement": 0.9688
+    },
+    "20": {
+      "kl_mean": 0.0018,
+      "top1_agreement": 0.9844
+    },
+    "21": {
+      "kl_mean": 0.1215,
+      "top1_agreement": 0.9062
+    },
+    "22": {
+      "kl_mean": 0.0013,
+      "top1_agreement": 1.0
+    },
+    "23": {
+      "kl_mean": 0.0014,
+      "top1_agreement": 0.9844
+    },
+    "24": {
+      "kl_mean": 0.0007,
+      "top1_agreement": 1.0
+    },
+    "25": {
+      "kl_mean": 0.0018,
+      "top1_agreement": 1.0
+    },
+    "26": {
+      "kl_mean": 0.0183,
+      "top1_agreement": 0.9844
+    },
+    "27": {
+      "kl_mean": 0.0265,
+      "top1_agreement": 0.9531
+    },
+    "28": {
+      "kl_mean": 0.0018,
+      "top1_agreement": 1.0
+    },
+    "29": {
+      "kl_mean": 0.0025,
+      "top1_agreement": 1.0
+    },
+    "30": {
+      "kl_mean": 0.0052,
+      "top1_agreement": 0.9531
+    },
+    "31": {
+      "kl_mean": 0.0369,
+      "top1_agreement": 0.9531
+    }
+  }
+}

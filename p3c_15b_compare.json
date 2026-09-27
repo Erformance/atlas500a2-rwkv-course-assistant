@@ -1,0 +1,54 @@
+{
+  "tokens": 64,
+  "reference": {
+    "suffix": "",
+    "plan": {
+      "suffix": "_15b_a0_q",
+      "layers": [
+        22,
+        21,
+        20,
+        3,
+        17,
+        10,
+        9,
+        2
+      ],
+      "head": false
+    },
+    "text": "pilot",
+    "tokens": 64,
+    "n_quant_layers": 8,
+    "n_fp16_layers": 17,
+    "prefill_s": 4.219,
+    "decode_ms_per_token": 65.55,
+    "decode_tok_s": 15.26,
+    "wkv_absmean_first_last": [
+      0.0024,
+      0.1237
+    ],
+    "wkv_absmean_mean": 0.1055
+  },
+  "arms": {
+    "_15b_m": {
+      "tokens": 64,
+      "kl_mean": 0.1416,
+      "kl_max": 3.1546,
+      "kl_first10_mean": 0.7688,
+      "kl_last10_mean": 0.0108,
+      "top1_agreement": 0.8906,
+      "wkv_ref_vs_arm": null,
+      "wkv_rel_mean": 0.0107
+    },
+    "_15b_a0": {
+      "tokens": 64,
+      "kl_mean": 0.5052,
+      "kl_max": 3.361,
+      "kl_first10_mean": 1.0545,
+      "kl_last10_mean": 0.4605,
+      "top1_agreement": 0.7031,
+      "wkv_ref_vs_arm": null,
+      "wkv_rel_mean": 0.0263
+    }
+  }
+}
