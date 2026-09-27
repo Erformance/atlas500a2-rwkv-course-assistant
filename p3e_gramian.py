@@ -57,7 +57,9 @@ def capture():
 
     tok = AutoTokenizer.from_pretrained(MODEL_DIR, trust_remote_code=True)
     import p1_corpus
-    ids = tok.encode(p1_corpus.text_for("val"))[:CAPTURE_TOKENS]
+    # 与 ab_run_arm.take_ids 同理：本机对这份语料编码耗时超线性增长，
+    # 只要前几个 token，取前缀即可（实测 4 KB 前缀与全文的前 128 个 id 一致）。
+    ids = tok.encode(p1_corpus.text_for("val")[:4096])[:CAPTURE_TOKENS]
     print("捕获序列 %d token" % len(ids), flush=True)
 
     model = AutoModelForCausalLM.from_pretrained(MODEL_DIR, trust_remote_code=True,

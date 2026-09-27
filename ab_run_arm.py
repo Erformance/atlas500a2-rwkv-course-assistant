@@ -23,6 +23,23 @@ from rwkv7_serve2 import Engine, WKV_BYTES, LAYERS    # noqa: E402
 from capture_calib_pre import PILOT_TEXT, MIXED_TEXT   # noqa: E402
 
 
+def take_ids(tokenizer, text, tokens):
+    """只取前 `tokens` 个 token，按需逐步截断文本。
+
+    `tokenizers` 在本机对这份语料的编码耗时随长度超线性增长（实测 512 字符 0.22 s、
+    4096 字符 36 s、12.7 KB 全文 250 s），直接 encode 全文会让每条臂白白多花几分钟。
+    BPE 是自左向右的，取足够长的前缀再截前 `tokens` 个 id 与全文结果一致
+    （实测 4 KB 前缀与 8 KB 前缀的前 128 个 id 完全相同）。这里从 1 KB 起步，
+    不够就翻倍，直到攒够或用到全文。
+    """
+    n = 1024
+    while True:
+        ids = tokenizer.encode(text[:n]).ids
+        if len(ids) >= tokens or n >= len(text):
+            return ids[:tokens]
+        n *= 4
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--suffix", default="")
@@ -49,7 +66,7 @@ def main():
         text = p1_corpus.text_for(args.text[2:])
     else:
         text = PILOT_TEXT
-    ids = tokenizer.encode(text).ids[: args.tokens]
+    ids = take_ids(tokenizer, text, args.tokens)
     print("[计时] 取文本+分词 %.1fs（%d token）" % (time.time() - t_stage, len(ids)),
           flush=True)
 
