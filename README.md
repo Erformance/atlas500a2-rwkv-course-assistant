@@ -36,6 +36,8 @@ PyTorch(safetensors) → 逐层导出 ONNX → ATC 编译成 .om → pyACL 零�
 
 ## 仓库结构
 
+完整文件清单（150 个文件，按用途分 9 类）见 [`FILES.md`](FILES.md)；下面只列常用部分。
+
 **推理与服务（设备侧）**
 
 | 文件 | 说明 |
