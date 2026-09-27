@@ -1,0 +1,24 @@
+{
+  "ablations": {
+    "calibration": {
+      "2.9B timing: post-exec sampling": 0.945,
+      "2.9B timing: pre-exec sampling": 0.686,
+      "2.9B plan: age-0 only": 0.6537,
+      "2.9B plan: age 0+256": 0.0168,
+      "2.9B plan: age 0+64+256": 0.0141,
+      "1.5B plan: age-0 only": 0.5052,
+      "1.5B plan: age 0+256": 0.1416
+    },
+    "planning": {
+      "full int8: inject (no prop.)": 0.5604,
+      "full int8: free (prop.)": 1.151,
+      "path protection (FFN-only bound)": 0.56,
+      "layer selection (top16)": 0.0314,
+      "plan from H=1": 0.0467,
+      "plan from H=8": 0.0151,
+      "plan from H=64": 0.0141,
+      "plan from direction gamma": 0.0514
+    }
+  },
+  "note": "全部为实测值；path protection 的 0.56 是 P2-C 的路径保护理论上限"
+}

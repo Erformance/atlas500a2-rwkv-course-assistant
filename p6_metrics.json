@@ -1,0 +1,52 @@
+{
+  "metrics": [
+    {
+      "metric": "local output err",
+      "cost_forwards": 1,
+      "spearman_vs_kl64": 0.5275,
+      "top8_overlap": 0.5
+    },
+    {
+      "metric": "||delta||",
+      "cost_forwards": 1,
+      "spearman_vs_kl64": 0.1122,
+      "top8_overlap": 0.25
+    },
+    {
+      "metric": "G=I (unweighted)",
+      "cost_forwards": 1,
+      "spearman_vs_kl64": 0.5565,
+      "top8_overlap": 0.5
+    },
+    {
+      "metric": "direction gamma",
+      "cost_forwards": 3,
+      "spearman_vs_kl64": 0.3105,
+      "top8_overlap": 0.25
+    },
+    {
+      "metric": "rollout H=1",
+      "cost_forwards": 1,
+      "spearman_vs_kl64": 0.3987,
+      "top8_overlap": 0.25
+    },
+    {
+      "metric": "rollout H=8",
+      "cost_forwards": 8,
+      "spearman_vs_kl64": 0.8439,
+      "top8_overlap": 0.75
+    },
+    {
+      "metric": "rollout H=32",
+      "cost_forwards": 32,
+      "spearman_vs_kl64": 0.9566,
+      "top8_overlap": 0.875
+    },
+    {
+      "metric": "rollout H=64",
+      "cost_forwards": 64,
+      "spearman_vs_kl64": 1.0,
+      "top8_overlap": 1.0
+    }
+  ]
+}
