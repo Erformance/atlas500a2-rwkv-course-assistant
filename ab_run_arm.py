@@ -38,7 +38,10 @@ def main():
     parser.add_argument("--meta", default="")
     args = parser.parse_args()
 
+    t_stage = time.time()
     tokenizer = Tokenizer.from_file(os.path.join(MODEL_DIR, "tokenizer.json"))
+    print("[计时] 载入 tokenizer %.1fs" % (time.time() - t_stage), flush=True)
+    t_stage = time.time()
     if args.text == "mixed":
         text = MIXED_TEXT
     elif args.text in ("p1val", "p1test"):
@@ -47,9 +50,13 @@ def main():
     else:
         text = PILOT_TEXT
     ids = tokenizer.encode(text).ids[: args.tokens]
+    print("[计时] 取文本+分词 %.1fs（%d token）" % (time.time() - t_stage, len(ids)),
+          flush=True)
 
     plan = json.loads(args.plan_json) if args.plan_json else None
+    t_stage = time.time()
     engine = Engine(MODEL_DIR, suffix=args.suffix, plan=plan)
+    print("[计时] 建引擎 %.1fs" % (time.time() - t_stage), flush=True)
     engine.reset_state()
     logits_seq = []
     t0 = time.time()
@@ -70,6 +77,7 @@ def main():
         engine.step(tok_fixed)
     decode_s = time.time() - t1
 
+    t_stage = time.time()
     meta = {
         "suffix": args.suffix,
         "plan": plan,
@@ -85,6 +93,7 @@ def main():
     }
     np.savez_compressed(args.out, logits=np.stack(logits_seq),
                         wkv=np.array(wkv, np.float32))
+    print("[计时] 落盘 %.1fs" % (time.time() - t_stage), flush=True)
     if args.meta:
         with open(args.meta, "w") as fh:
             json.dump(meta, fh, ensure_ascii=False, indent=2)

@@ -144,3 +144,23 @@ P0–P5 与通用分析脚本；P6 的出图脚本与数据见第 2 节。
 | --- | --- |
 | `ascend_pytorch_700.pdf` | 昇腾 PyTorch 框架适配文档（离线留存） |
 | `ascend_pytorch_700.txt` | 上者的文本提取版，便于仓库内检索 |
+
+## 10. 协议收尾补充（2026-09-27 新增，12 个）
+
+补齐协议里此前缺的项：H=128 窗口、跨分布复核、权重 MSE、逐题对照、ARC/HellaSwag 子集、
+稠密 Gramian 一致性。
+
+| 文件 | 说明 |
+| --- | --- |
+| `p3d_horizon.py` | P3-D：128 步窗口 + 跨分布（pilot/p1test）的排序相关、top-k 重合、配对 bootstrap |
+| `p3d_chain.sh` / `queue_next.sh` / `queue_tail.sh` | P3-D 链与两个串行队列（一次只跑一个重活） |
+| `p3d_probe.py` | 采臂前的数据口径探测（既有臂步数、各文本 token 数） |
+| `p3w_weight_mse.py` | P3-W：权重 MSE（先在一份存量量化图上标定口径，再算 32 层 + 输出头） |
+| `p3w_compare.py` | 权重 MSE 与 rollout KL 的排序相关性（结论：无预测力） |
+| `p3w_probe.py` | 量化 ONNX 结构探测（int8 权重如何存、AscendQuant/Dequant 语义） |
+| `p4_item_cpu.sh` | P4 ① 逐题 CPU↔NPU 对照的 CPU 侧补跑 + 比对 |
+| `p4_arc_hella_chain.sh` | P4 ⑤ ARC-Easy / HellaSwag 子集（fp16 与均衡档） |
+| `p3e_gramian.py` / `p3e_chain.sh` | P3-E：稠密 Gramian 与结构化递推的一致性 + 离线耗时 |
+
+另外 `ab_run_arm.py` 这次加了分阶段计时（载入 tokenizer / 分词 / 建引擎 / 落盘），
+用于定位采臂变慢的原因。

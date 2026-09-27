@@ -558,3 +558,61 @@ int8 档答完代码块会直接续写 ```` ```User: 下一个问题…… ````�
 - 主机 `192.168.31.50`，用户 `admin`；`develop` 提权到 root（两次密码相同）
 - CANN 8.0.RC1：`/home/disk/cann80base/ascend-toolkit/set_env.sh`
 - conda：`/home/disk/miniconda3/envs/{npu22,rwkv7,quant}`
+# 2026-09-27（设备时间）：协议收尾第 1 批——权重 MSE 完成、H=128 采臂进行中
+
+按"把协议里缺的项一个一个补完"推进。本轮开了 P3-D（H=128 + 跨分布）、P3-W（权重 MSE）、
+P3-E（稠密 Gramian）三条新链，并把 P4 的两项排进串行队列。
+
+## 已完成：P3-W 权重 MSE（协议 §5 候选指标里缺的那一个）
+
+此前缺这项的原因写在 P3 报告 §8.5：int8 ONNX 在 ATC 编译后被删除。这次的做法是
+**先在一份存量的量化图（`layer31_cp_q.onnx`）上标定口径，再用同一规则从 fp16 简化图重算**：
+
+| 检查项 | 结果 |
+| --- | --- |
+| int8 权重存放方式 | `<权重名>_quantized` 初始化器（int8），配 `AscendQuant/AscendDequant` 节点 |
+| 真实量化轴 | **dim 0（逐行）**，与图中 int8 完全一致率 **99.95%~99.99%**（残差来自取整） |
+| 每行刻度 | 恰为 `max|w| / 127`（图中反解刻度 / (max/127) = **1.000**） |
+| 该层权重相对 MSE | 8.0e-5 ~ 1.2e-4 |
+
+33 个目标（32 层 + 输出头）全算完（`p3w_weight_mse.json`）后与 rollout KL 比排序：
+
+| 窗口 | Spearman（权重 MSE vs KL） | top-8 重合 |
+| --- | --- | --- |
+| H=1 | **−0.363** | 0.00 |
+| H=8 | 0.007 | 0.38 |
+| H=32 | 0.047 | 0.50 |
+| H=64 | **−0.017** | 0.50 |
+
+**结论：权重 MSE 没有选层能力。** 33 个目标的取值只有 1.5 倍差距（8.08e-5 ~ 1.24e-4），
+排序与端到端 KL 基本无关。这与 P6 的既有结论一致——单步/离线类指标上限约 0.56，
+而 8 步 rollout 到 0.844；**"便宜"的指标在这里就是"没用"的指标**。
+
+## 进行中：P3-D（H=128 + 跨分布复核）
+
+协议 §5 要求 H=1/8/32/128，且本轮 P3 只在 pilot 文本上做过 H 分析。做法是把每目标臂
+从 64 步扩到 128 步，并在 pilot 与 p1test（P1 语料独立测试分割）两份文本上各采一轮：
+
+- pilot：33/33 目标完成（每臂约 88 s）
+- p1test：6/33 目标完成后，设备 SSH 异常（见下）
+
+**新发现（待定位）**：p1test 的臂耗时 **336 s**，而 pilot 只有 88 s；进程采样显示它
+**CPU 打满、无磁盘 IO、NPU AICore 0%**，且臂自身记录 prefill 仅 22.9 s、decode 179 ms/token
+（与 pilot 一致）。已给 `ab_run_arm.py` 加分阶段计时（tokenizer / 分词 / 建引擎 / 落盘）
+并写入 `p3d_arms.log`，等设备恢复后据此定位。
+
+## 设备异常（本轮中断点）
+
+2026-09-27 20:47 起，设备 **ping 正常但 22 端口不返回 SSH banner**（TCP 能建连、
+paramiko 报 `No existing session`），反复重试 25 分钟未恢复，判断为设备侧 sshd
+无法完成握手（资源耗尽类），需要**上电重启**。重启后：
+
+1. 先看 `p3d_chain.sh` / `queue_next.sh` / `queue_tail.sh` 是否还在（不在就重新拉起，均可续跑）；
+2. 读 `p3d_arms.log` 定位 p1test 臂慢的原因；
+3. 继续 P3-D →（队列）P4 ① 逐题 CPU → P4 ⑤ ARC/HellaSwag → P3-E Gramian。
+
+## 本轮新增脚本（12 个，均已入库）
+
+`p3d_horizon.py`、`p3d_chain.sh`、`p3d_probe.py`、`p3w_weight_mse.py`、`p3w_compare.py`、
+`p3w_probe.py`、`p4_item_cpu.sh`、`p4_arc_hella_chain.sh`、`queue_next.sh`、
+`p3e_gramian.py`、`p3e_chain.sh`、`queue_tail.sh`；另 `ab_run_arm.py` 加了分阶段计时。
