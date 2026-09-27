@@ -14,6 +14,9 @@
 | 权重体积 | 5.2 GB（fp16），运行时内存约 5.5 GB |
 | 设备上限 | 2.9B；7.2B 受 11.5GB 共享内存限制，本机不可行（见下） |
 | 推理档位 | 网页上可切：精确（fp16）/ 均衡（8 层 int8）/ 快速（16 层 int8），换档约 45 秒 |
+| 量化质量 | 均衡档全序列 KL 0.0141（top-1 一致 93.8%）；PIQA 79.0→78.0%、LAMBADA acc 71.5→70.0%、困惑度 +12.5% |
+| 跨规模验证 | 同族 1.5B 也已在本机跑通：PIQA 0.750 / LAMBADA 0.650 / 解码 13.23 tok/s |
+| 关键实验结论 | ① 校准必须采到"真实长轨迹状态"（只采段首 ≈ 没校准）；② 测量窗口 H=8 与 H=64 等价（成本降 8 倍）；③ 选层计划不跨模型规模迁移，但重扫很便宜 |
 
 ## 技术路线
 
@@ -81,6 +84,17 @@ PyTorch(safetensors) → 逐层导出 ONNX → ATC 编译成 .om → pyACL 零�
 | `P0_校准与参考一致性_报告.md` | 协议 P0：采样时序错误定位 + 重放/双缓冲/参考链路验证 |
 | `P2_量化对照实验_报告.md` | 协议 P2：修正时序后的 int8 对照（KL / top-1 / 文本） |
 | `P3_混合精度_报告.md` | 协议 P3：逐层敏感度与混合精度帕累托曲线 |
+| `P4_基线评估_报告.md` | 协议 P4：lm-eval 接自定义 backend、PIQA/LAMBADA 子集、CPU↔OM 逐 token 对照、1.5B 跨规模迁移 |
+| `P5_性能矩阵_报告.md` | 协议 P5：4 臂 × 5 前缀 × 5 次重复的固定工作量矩阵、HTTP 真实延迟、内存分解 |
+| `P6_图表与消融_报告.md` | 协议 P6：六幅论文用图 + 关键消融表（含 G=I 消融） |
+| `figs/…`（GitHub 根目录的 `fig1_pareto.png` … `fig6_search_cost.png`） | P6 六幅图（本地在 `figs/`，网页上传会丢子目录） |
+| `p6_figures.py` / `p6_ablations.json` / `p6_metrics.json` | 出图脚本与消融/指标数据表 |
+| `p1_corpus.py` / `capture_calib_p1.py` / `pack_calib_p1.py` / `build_p1_layers.sh` / `p1_chain.sh` | P1 扩展校准：64 段分离语料 → 状态年龄采样 → 重编译 |
+| `sensitivity.py` / `pareto.py` / `p3_horizon.py` / `p3b_*.py` | 逐层敏感度、帕累托、H 窗口分析、方向指标（输出加权 Gramian 一阶形式） |
+| `p4_score_server.py` / `p4_lm_eval_backend.py` / `p4_run_eval.py` | lm-evaluation-harness 的自定义 backend（同 tokenizer / 同 .om） |
+| `p5_bench.py` / `p5_http.py` / `p5_chain.sh` | 固定工作量微基准与 HTTP 真实延迟 |
+| `p2d_pulse.py` / `p2f_free_gen.py` / `p2c_inject.py` / `p3c_15b_*_chain.sh` | 脉冲/持续、强制/自由、跨规模迁移等补充实验 |
+| `tiers.json` / `service.tier` / `service_supervisor.sh` | 推理档位表与换档监督（退出码 75 → 按新档位重启） |
 | `*_device.log` | 设备上跑出来的实验数据（误差扫描、层数扫描） |
 | `ascend_pytorch_700.*` | 华为官方文档参考资料 |
 | 其余 `rwkv7_*.py` / `rwkv_onnx_*.py` | 早期探索版本，保留备查 |
@@ -127,6 +141,34 @@ cp atlas.env.example atlas.env   # 填入设备地址与密码（不会提交）
 python atlas.py run "npu-smi info"
 python atlas.py put 本地文件 /home/disk/...
 ```
+
+## 复现顺序（设备上依次运行）
+
+协议（`02_补实验执行协议.md`）的实验链按下面顺序跑，每步都是可中断续跑的脚本：
+
+```bash
+# 0) 部署：逐层导出 ONNX → ATC 编译 → 起服务（见上）
+# 1) P0/P1：校准数据与存储（64 段分离语料 + 状态年龄 0/64/256）
+bash p1_chain.sh                 # 采集 → 打包 → 重编译 int8 层 → 三臂对照
+# 2) P2：错误来源分解（A/C/D/F）
+python p2c_ref_states.py && python p2c_inject.py     # C：注入 vs 自由
+bash p2df_chain.sh                                   # D：脉冲 vs 持续；F：强制 vs 自由
+# 3) P3：逐层敏感度 → 帕累托 → H 窗口 → 方向指标
+python sensitivity.py --suffix _p1_q --out sensitivity_p1.json
+python pareto.py --suffix _p1_q --sens sensitivity_p1.json --out pareto_p1.json
+bash p3_chain.sh && bash p3_local_chain.sh && bash p3b_dir_chain.sh
+# 4) P4：lm-eval 评测（需先装 lm-eval 与自定义 backend）
+bash p4_cpu_check_chain.sh       # CPU↔OM 逐 token 对照
+bash p4_pilot_chain.sh           # PIQA + LAMBADA 子集，两档对比
+# 5) P5：性能矩阵与真实延迟
+bash p5_chain.sh                 # 4 臂 × 5 前缀 × 5 次重复 + HTTP 延迟
+# 6) P6：出图
+python p6_figures.py             # 生成 figs/ 下六幅图与消融表
+```
+
+跨规模（1.5B）复现：设 `RWKV_MODEL_DIR=/home/disk/models/rwkv7-1.5b` 后走同一套脚本
+（`p4b_15b_chain.sh` 部署、`p3c_15b_finalize_chain.sh` 量化迁移），
+注意**每个模型规模都要重新做选层扫描**（结论见 P4 报告 §7）。
 
 ## 量化实验结果（重要）
 
