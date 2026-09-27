@@ -87,7 +87,7 @@ PyTorch(safetensors) → 逐层导出 ONNX → ATC 编译成 .om → pyACL 零�
 | `P4_基线评估_报告.md` | 协议 P4：lm-eval 接自定义 backend、PIQA/LAMBADA 子集、CPU↔OM 逐 token 对照、1.5B 跨规模迁移 |
 | `P5_性能矩阵_报告.md` | 协议 P5：4 臂 × 5 前缀 × 5 次重复的固定工作量矩阵、HTTP 真实延迟、内存分解 |
 | `P6_图表与消融_报告.md` | 协议 P6：六幅论文用图 + 关键消融表（含 G=I 消融） |
-| `figs/…`（GitHub 根目录的 `fig1_pareto.png` … `fig6_search_cost.png`） | P6 六幅图（本地在 `figs/`，网页上传会丢子目录） |
+| `figs/fig1_pareto.png` … `figs/fig6_search_cost.png` | P6 六幅论文用图（英文标注，避免设备无中文字体） |
 | `p6_figures.py` / `p6_ablations.json` / `p6_metrics.json` | 出图脚本与消融/指标数据表 |
 | `p1_corpus.py` / `capture_calib_p1.py` / `pack_calib_p1.py` / `build_p1_layers.sh` / `p1_chain.sh` | P1 扩展校准：64 段分离语料 → 状态年龄采样 → 重编译 |
 | `sensitivity.py` / `pareto.py` / `p3_horizon.py` / `p3b_*.py` | 逐层敏感度、帕累托、H 窗口分析、方向指标（输出加权 Gramian 一阶形式） |
