@@ -47,7 +47,6 @@ def capture():
     sys.path.insert(0, MODEL_DIR)
     import torch
     from transformers import AutoTokenizer, AutoModelForCausalLM
-    import modeling_rwkv7 as M
 
     try:
         torch.backends.mkldnn.enabled = False
@@ -65,6 +64,15 @@ def capture():
     model = AutoModelForCausalLM.from_pretrained(MODEL_DIR, trust_remote_code=True,
                                                  dtype=torch.bfloat16).eval()
     print("模型层数 %d" % len(model.rwkv7.blocks), flush=True)
+
+    # 不能直接 `import modeling_rwkv7`：它是包内模块（`from .configuration_rwkv7 import ...`），
+    # 单独导入会报 "attempted relative import with no known parent package"（9-28 就是这么失败的）。
+    # transformers 用 trust_remote_code 把远端代码装进 `transformers_modules.<模型名>.modeling_rwkv7`，
+    # 所以从**已加载模型所属的模块**里取注册表最稳。
+    M = sys.modules[type(model).__module__]
+    if not hasattr(M, "RWKV7_WKV_FUNCTIONS"):
+        raise RuntimeError("在 %s 里找不到 RWKV7_WKV_FUNCTIONS" % type(model).__module__)
+    print("补丁模块 %s" % type(model).__module__, flush=True)
 
     store = {}
     orig = M.RWKV7_WKV_FUNCTIONS["eager"]
