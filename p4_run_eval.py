@@ -46,6 +46,23 @@ def main():
     )
     wall = time.time() - t0
 
+    def jsonable(obj):
+        """把 lm-eval 配置里的**函数对象**变成字符串。
+
+        9-28 的教训：`results["configs"]` 里含 `process_docs` 之类的可调用对象，
+        `json.dump` 会在写到一半时抛 `TypeError: Object of type function is not JSON
+        serializable`，留下一个**被截断的 JSON**（fp16 与均衡档都断在同一行）。
+        """
+        try:
+            json.dumps(obj)
+            return obj
+        except TypeError:
+            if isinstance(obj, dict):
+                return {k: jsonable(v) for k, v in obj.items()}
+            if isinstance(obj, (list, tuple)):
+                return [jsonable(v) for v in obj]
+            return repr(obj)
+
     out = {
         "lm_eval_version": getattr(lm_eval, "__version__", "unknown"),
         "python": platform.python_version(),
@@ -55,10 +72,10 @@ def main():
         "wall_seconds": round(wall, 1),
         "results": results.get("results", {}),
         "n_samples": {k: len(v) for k, v in (results.get("samples") or {}).items()},
-        "configs": {k: v for k, v in (results.get("configs") or {}).items()},
+        "configs": jsonable({k: v for k, v in (results.get("configs") or {}).items()}),
     }
     with open(args.out, "w", encoding="utf-8") as fh:
-        json.dump(out, fh, ensure_ascii=False, indent=2)
+        json.dump(out, fh, ensure_ascii=False, indent=2, default=str)
 
     print("\n==== 结果（lm-eval %s，子集 %s）===="
           % (out["lm_eval_version"], args.limit))

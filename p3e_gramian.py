@@ -74,22 +74,41 @@ def capture():
         raise RuntimeError("在 %s 里找不到 RWKV7_WKV_FUNCTIONS" % type(model).__module__)
     print("补丁模块 %s" % type(model).__module__, flush=True)
 
+    # 注意：config.json 里 `wkv_implementation = "chunked"`，注意力实际调用的是注册表里的
+    # "chunked" 实现，只给 "eager" 打补丁会一条数据都抓不到（9-28 就是这么空跑的）。
+    # 这里把注册表**所有**实现都包一层，并用 signature.bind 按名字取参数，避免顺序假设。
+    import inspect
+
+    reg = M.RWKV7_WKV_FUNCTIONS
+    print("注册表实现：%s" % sorted(reg), flush=True)
     store = {}
-    orig = M.RWKV7_WKV_FUNCTIONS["eager"]
 
-    def wrapper(r, w_log, k, v, kk, a, state, *args, **kwargs):
-        # 记录每层：w_log / a / kk / r（[B,T,H,d]）
-        for key, val in (("w_log", w_log), ("a", a), ("kk", kk), ("r", r)):
-            store.setdefault(key, []).append(val.detach().float().cpu().numpy())
-        return orig(r, w_log, k, v, kk, a, state, *args, **kwargs)
+    def make_wrapper(orig):
+        sig = inspect.signature(orig)
 
-    M.RWKV7_WKV_FUNCTIONS["eager"] = wrapper
+        def wrapper(*args, **kwargs):
+            try:
+                bound = sig.bind(*args, **kwargs)
+                for key in ("r", "w_log", "a", "kk"):
+                    val = bound.arguments.get(key)
+                    if val is not None:
+                        store.setdefault(key, []).append(
+                            val.detach().float().cpu().numpy())
+            except Exception as exc:               # noqa: BLE001
+                print("  捕获失败：%r" % (exc,), flush=True)
+            return orig(*args, **kwargs)
+        return wrapper
+
+    origs = {k: v for k, v in reg.items()}
+    for k in list(reg):
+        reg[k] = make_wrapper(origs[k])
     x = torch.tensor([ids], dtype=torch.long)
     t0 = time.time()
     with torch.no_grad():
         model(x)
     print("真实前向 %.0f s" % (time.time() - t0), flush=True)
-    M.RWKV7_WKV_FUNCTIONS["eager"] = orig
+    for k, v in origs.items():
+        reg[k] = v
 
     layers = len(store["w_log"])
     print("捕获到 %d 层，每层 shape %s" % (layers, store["w_log"][0].shape), flush=True)
@@ -117,10 +136,15 @@ def gramian_dense(w_log, a, kk, r, H):
             Mt = np.diag(decay[t, h])
             Mt -= np.outer(a[t, h], kk[t, h])
             Ms.append(Mt)
-        P = np.eye(d)
+        # g_t = (M_{H-1} … M_{t+1})^T r_H —— 注意 readout 始终是**最后一步**的 r_H，
+        # 只有转移矩阵的乘积随 t 变。9-28 修正两处：(1) 原先写成 W = M_t @ W，乘序反了；
+        # (2) 原先每步用 r[t]，与结构化路径用的 r[H-1] 不是同一个对象。
+        rf = r[H - 1, h]
+        W = np.eye(d)
         for t in range(H - 1, -1, -1):
-            G[h] += np.outer(P.T @ r[t, h], P.T @ r[t, h])
-            P = Ms[t] @ P
+            g = W.T @ rf
+            G[h] += np.outer(g, g)
+            W = W @ Ms[t]
     return G
 
 
@@ -165,15 +189,26 @@ def study():
                        for L in range(n_layers)])
         t_struct = time.time() - t0
 
-        denom = np.abs(Gd).max() + 1e-30
-        max_abs = float(np.abs(Gd - Gs).max())
-        rel = float(np.abs(Gd - Gs).max() / denom)
+        # 长窗口下这个算子族的乘积会指数增长（真实数据也会溢出），所以按"双方都有限"的元素比较，
+        # 并额外报告有限元素比例，避免把溢出当成数值不一致。
+        ok = np.isfinite(Gd) & np.isfinite(Gs)
+        finite_frac = float(ok.mean())
+        if ok.any():
+            max_abs = float(np.abs(Gd - Gs)[ok].max())
+            denom = float(np.abs(Gd)[ok].max()) + 1e-30
+            rel = float(max_abs / denom)
+        else:
+            max_abs = rel = float("nan")
         report["windows"]["H%d" % H] = {
             "note": note, "max_abs_diff": max_abs, "rel_diff": rel,
+            "finite_fraction": round(finite_frac, 6),
+            "gramian_abs_max": float(np.abs(Gd).max()),
+            "gramian_abs_max_structured": float(np.abs(Gs).max()),
             "dense_seconds": round(t_dense, 3), "structured_seconds": round(t_struct, 3),
             "dense_over_structured": round(t_dense / max(t_struct, 1e-9), 2)}
-        print("H=%-4d %-22s 最大偏差 %.3e（相对 %.2e）｜ dense %.2fs ｜ structured %.2fs ｜ 倍数 %.1f×"
-              % (H, note, max_abs, rel, t_dense, t_struct,
+        print("H=%-4d %-22s 最大偏差 %.3e（相对 %.2e）｜ 有限元素 %.1f%% ｜ |G|max %.3e ｜ dense %.2fs ｜ structured %.2fs ｜ 倍数 %.1f×"
+              % (H, note, max_abs, rel, finite_frac * 100, float(np.abs(Gd).max()),
+                 t_dense, t_struct,
                  t_dense / max(t_struct, 1e-9)), flush=True)
 
     with open(OUT, "w") as fh:
