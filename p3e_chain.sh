@@ -19,11 +19,18 @@ for p in $(pgrep -f "bash $(basename "$0")"); do
   [ "$p" != "$$" ] && { echo "已有另一份在跑（pid $p），退出"; exit 1; }
 done
 
-for i in $(seq 1 240); do
+# 等锁：最多 8 小时；到点仍被占就**退出**，绝不与 NPU 实验并发。
+# 9-28 教训：原来"等 80 分钟就硬上"导致 CPU torch(6GB) 与 NPU 引擎(5.5GB) 同时驻留，
+# 设备被拖死（负载 17.5、.om 加载报 245000）。
+for i in $(seq 1 480); do
   [ -f "$MODEL_DIR/experiment.lock" ] || break
   echo "  等待别的实验链释放 experiment.lock（$i）"
-  sleep 20
+  sleep 60
 done
+if [ -f "$MODEL_DIR/experiment.lock" ]; then
+  echo "锁仍被占用，本链退出（不做并发）"
+  exit 1
+fi
 
 bash start_service.sh stop
 for i in $(seq 1 60); do

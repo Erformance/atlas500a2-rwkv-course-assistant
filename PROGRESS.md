@@ -631,3 +631,51 @@ paramiko 报 `No existing session`），反复重试 25 分钟未恢复，判断
 `p3d_horizon.py`、`p3d_chain.sh`、`p3d_probe.py`、`p3w_weight_mse.py`、`p3w_compare.py`、
 `p3w_probe.py`、`p4_item_cpu.sh`、`p4_arc_hella_chain.sh`、`queue_next.sh`、
 `p3e_gramian.py`、`p3e_chain.sh`、`queue_tail.sh`；另 `ab_run_arm.py` 加了分阶段计时。
+# 2026-09-28：设备卡死复盘 + P4 ① 收官 + fp16 档 ARC/HellaSwag 抢救
+
+## 结论先行
+
+- **P4 ① 题目粒度逐题对照：完成**（选择 3/3 一致，最大 logp 偏差 0.1709）
+- **P4 ⑤ fp16 档 ARC/HellaSwag：完成**（arc_easy acc 0.795 / acc_norm 0.810；
+  hellaswag acc 0.520 / acc_norm 0.690，各 200 题，用时 3.6 h）
+- 均衡档 ARC/HellaSwag 与 P3-E 已于 9-28 12:45 重新排队（严格串行、不关机）
+
+## 设备为什么又卡死（9-28 凌晨）
+
+现象与 9-27 相同：ping 通、22/8000/8100 全部无响应、`final_poweroff.log` 只有一行
+（说明**不是**我的自动关机把它弄死的——守护一直在等链条）。文件系统干净
+（只有正常的断电恢复记录，无 I/O 错误），数据未受损。
+
+根因是**两条重活并发**：
+
+1. `queue_tail.sh` 只检查 `queue_next.sh` 是否活着。后者退出后，它的**子链**
+   `p4_arc_hella_chain.sh` 仍在跑（当时正在跑均衡档评测），尾队列误判"前序已结束"，
+   03:45 启动了 P3-E（见 `queue_tail.log`、`p3e_chain.log` 开头的"等待锁"记录）。
+2. `p3e_chain.sh` 的等锁循环有**上限**（240×20s = 80 分钟），到点后即使锁还在也继续执行
+   → CPU torch（约 6 GB）与 NPU 引擎（约 5.5 GB）同时驻留。
+3. 结果：`.om` 加载报 245000、健康看门狗每 5 分钟重启服务、负载冲到 17.5，
+   整机卡死；ARC 链的评测进程被 SIGTERM，写了一半的 JSON 留在盘上（见下）。
+
+### 修复（均已入库）
+
+| 修复 | 文件 |
+| --- | --- |
+| 等锁改成"等不到就退出"，**绝不并发** | `p3e_chain.sh`、`p4_arc_hella_chain.sh` |
+| 尾队列把子链与 `experiment.lock` 一并纳入判据 | `queue_tail.sh` |
+| **取消自动关机**（这台设备关机流程不可靠，连续两晚卡在关机阶段），改人工断电 | 不再使用 `final_poweroff.sh` |
+| ARC 链支持只跑指定档位（`TIERS=balanced`），已有结果的档位自动跳过 | `p4_arc_hella_chain.sh` |
+
+## 抢救：被截断的 fp16 档结果
+
+`p4_eval_fp16_arc_hella.json` 在写盘收尾时被杀，`configs` 段截断（`results` 与
+`n_samples` 段完整）。处理方式：保留原始截断文件为 `.truncated`，把完整段修成合法 JSON
+（去掉行尾逗号、补上闭合括号），两处都留在设备上并在报告里标注来源。
+
+## 下一步（已排队，12:45 启动）
+
+1. P3-E：稠密 Gramian vs 结构化递推的一致性 + 离线耗时（纯 CPU，约 20 分钟）
+2. P4 ⑤ 均衡档 ARC-Easy / HellaSwag 子集（需要 NPU，约 3.6 小时）
+
+跑完**不关机**；此后仍缺的协议项只有"RWKVQuant 对照"与"中文课程题盲评"两项
+（前者需其 checkpoint、本机无 VQ kernel，只能做准确率—存储对照并标注"该设备未实现"；
+后者需人工评分）。
