@@ -31,6 +31,8 @@ def main():
     parser.add_argument("--limit", type=float, default=20)
     parser.add_argument("--base-url", default="http://127.0.0.1:8100")
     parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--samples-out", default="",
+                        help="把逐题结果写成 JSONL（任务书 Task C 需要逐题 correctness）")
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
 
@@ -76,6 +78,30 @@ def main():
     }
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump(out, fh, ensure_ascii=False, indent=2, default=str)
+
+    # 任务书 Task C：逐题结果必须落盘（此前只存了聚合指标，无法做 paired bootstrap / McNemar）
+    if args.samples_out:
+        samples = results.get("samples") or {}
+        n = 0
+        with open(args.samples_out, "w", encoding="utf-8") as fh:
+            for task_name, rows in samples.items():
+                for r in rows:
+                    # lm-eval 的逐题字段名随任务类型不同：acc / acc_norm / exact_match
+                    fields = {k: v for k, v in r.items()
+                              if k in ("doc_id", "target", "filter", "acc", "acc_norm",
+                                       "exact_match", "exact_match_stderr", "acc_stderr",
+                                       "acc_norm_stderr")}
+                    # 目标 token 可能是嵌套结构，展平成字符串便于落盘
+                    if isinstance(fields.get("target"), (list, tuple, dict)):
+                        fields["target"] = json.dumps(fields["target"], ensure_ascii=False)
+                    # 逐题 NLL（LAMBADA 的 paired NLL 需要）
+                    for key in ("nll", "nll_stderr", "loglikelihood", "seq_loglikelihood"):
+                        if key in r:
+                            fields[key] = r[key]
+                    fh.write(json.dumps({"task": task_name, **fields},
+                                        ensure_ascii=False) + "\n")
+                    n += 1
+        print("逐题结果已写出 %s（%d 条）" % (args.samples_out, n))
 
     print("\n==== 结果（lm-eval %s，子集 %s）===="
           % (out["lm_eval_version"], args.limit))
